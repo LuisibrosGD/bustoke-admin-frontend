@@ -1,0 +1,10 @@
+export type { Repository } from './repository.interface';
+export { MockRepository } from './mock-repository';
+export { AgenciaRepository, agenciaRepository } from './agencias.repository';
+export { TerminalRepository, terminalRepository } from './terminales.repository';
+export { BusRepository, busRepository } from './buses.repository';
+export { RutaRepository, rutaRepository } from './rutas.repository';
+export { ViajeRepository, viajeRepository } from './viajes.repository';
+export { BoletoRepository, boletoRepository } from './boletos.repository';
+export { PasajeroRepository, pasajeroRepository } from './pasajeros.repository';
+export { AgenciaTerminalRepository, agenciaTerminalRepository } from './agenciasterminales.repository';

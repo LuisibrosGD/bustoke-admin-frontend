@@ -1,0 +1,506 @@
+# REQUERIMIENTOS BACKEND - BUSTOKE ADMIN PANEL
+# ============================================================================
+# Fecha: 2026-06-18 (v2, post-auditoría)
+# Propósito: Documentar el contrato API que el frontend admin REALMENTE espera.
+# Auditoría: Se mapearon todas las 25+ páginas del admin, sus fuentes de datos,
+#            y la BD (nuevadb/scriptbd.sql) para eliminar supuestos no verificados.
+#
+# Convención: frontend llama a {BASE_URL}/api/{path} con NEXT_PUBLIC_URL_API.
+#             Inyecta token JWT vía Authorization: Bearer <token>.
+#             Respuestas paginadas: { data: [], meta: { page, limit, totalItems, totalPages } }
+#
+# TIPOS CANÓNICOS: src/infrastructure/domain/types.ts (28 entidades)
+# ============================================================================
+
+## 1. AUTENTICACIÓN — CRÍTICO (páginas reales: /sign-in, /recover-email, /reset-password, /email-review)
+# Flujo: login → accessToken + refreshToken → almacenado en next-auth.
+# Las rutas bajo /api/admin/ requieren token válido (401 → redirect /sign-in).
+
+POST /api/admin/auth/login          # body: { email, password }
+                                    # resp: { accessToken, accessTokenExpiresAt, refreshToken, refreshTokenExpiresAt, user }
+POST /api/admin/auth/refresh        # body: { refreshToken }
+                                    # resp: igual formato que login
+POST /api/admin/auth/logout         # cierra sesión
+POST /api/admin/auth/recover-email  # body: { email }
+POST /api/admin/auth/reset-password # body: { password, token }
+POST /api/admin/auth/recover-verify # body: { token } — usado por /email-review
+
+
+## 2. LISTADOS PRINCIPALES — CRÍTICO (usados por hooks api.{entity}.list() en tablas)
+# Estos endpoints son consumidos por las páginas de listado que usan useAgencias(),
+# useFlota(), useRutas(), useViajes() — hooks que llaman api.{entity}.list().
+
+GET /api/admin/agencias             # → Agencia[]  — usado por /agencias, drilldown
+GET /api/admin/flota                # → Bus[]      — usado por /flota, drilldown
+GET /api/admin/rutas                # → Ruta[]     — usado por /rutas, drilldown
+GET /api/admin/viajes               # → Viaje[]    — usado por /viajes, drilldown
+
+# Filtros comunes (query params): ?from=&to=&page=&limit=&agenciaId=&estado=
+# Las tablas de listado muestran columnas que cruzan FK con nombres resueltos
+# (ej: idAgencia → razónSocial, idTerminalOrigen → terminal.nombre).
+
+
+## 3. REPORTES — CRÍTICO (páginas reales: /reportes-y-analitica/[slug])
+# El frontend NO llama a /api/admin/reports, sino directamente al servidor de
+# reportes externo vía serverHttpClient.
+
+GET /api/reports/:slug              # → { report: ReportDefinition, rows: ReportRow[], meta }
+                                    #   slug ∈ { ventas, viajes, manifiesto-sutran }
+GET /api/reports/:slug/export       # → Excel binario (Content-Type: application/vnd.openxmlformats)
+
+
+## 4. CONSULTAS INDIVIDUALES Y DETALLE — IMPORTANTE (usados por mock helpers, sin API real aún)
+# Actualmente los detail pages usan helpers mock (getViajeById, getBusById, etc.),
+# pero para migrar a API real se necesitan:
+
+GET /api/admin/viajes/:id           # → Viaje  — usado por /viajes/[id]
+GET /api/admin/viajes/:id/boletos   # → Boleto[] — usado por /viajes/[id]/boletos, check-in, manifiesto
+GET /api/admin/viajes/:id/pasajeros # → Pasajero[] — usado por /viajes/[id]/pasajeros
+GET /api/admin/viajes/:id/asientos  # → Asiento[] — usado por /viajes/[id]/asientos
+GET /api/admin/buses/:id            # → Bus  — usado por /flota/[id] (actualmente mock inline)
+GET /api/admin/rutas/:id            # → Ruta  — usado por /rutas/[id] (actualmente mock inline)
+GET /api/admin/agencias/:id         # → Agencia  — usado por /agencias/[id] (actualmente mock inline)
+GET /api/admin/pasajeros/:id        # → Pasajero  — usado por drilldown
+GET /api/admin/asientos?busId=:id   # → Asiento[]  — usado por /viajes/[id]/asientos
+
+# Nota: las páginas de DETALLE Y EDICIÓN (agencias/[id], flota/[id], rutas/[id],
+# viajes/[id]/editar, etc.) actualmente usan datos mock inline con campos OBSOLETOS
+# (email, telefono, direccion en Agencia; marca, modelo, anio en Bus; origen,
+# destino, distanciaKm en Ruta). Estas páginas REQUIEREN REDISEÑO para alinearse
+# a los tipos canónicos actuales.
+
+
+## 5. FUTURO — páginas que hoy importan MOCK_* directamente, no llaman API
+# Estas páginas renderizan datos mock importados y deberían migrarse a API:
+
+GET /api/admin/terminales            # → Terminal[]  — página /terminales
+GET /api/admin/reclamos              # → Reclamo[]   — página /reclamos
+GET /api/admin/soporte               # → TicketSoporte[] — página /soporte
+GET /api/admin/suscripciones         # → Suscripcion[] — página /suscripciones
+GET /api/admin/reclamos/:id/mensajes # → MensajeReclamo[] — si se agrega detalle de reclamo
+
+
+## 6. UBIGEO — FUTURO (no hay selector en UI actual, pero BD requiere FK a distrito)
+GET /api/ubigeo/departments          # → { value: string, label: string }[]
+GET /api/ubigeo/provinces/:dept      # → { value: string, label: string }[]
+GET /api/ubigeo/districts/:prov      # → { value: string, label: string }[]
+
+
+## 7. RECURSOS QUE PERTENECEN AL FRONTEND B2C (NO al admin)
+# Estas entidades existen en BD y en types.ts porque el admin las CONSULTA,
+# pero su CRUD completo pertenece al frontend de compra de pasajeros:
+
+# Pasajero — el admin solo consulta (listado, detalle por viaje)
+# Boleto   — el admin solo consulta (listado, detalle por viaje, check-in, manifiesto)
+# Pago     — NO tiene UI en el admin actualmente (solo existe en types/mocks)
+# Reembolso — NO tiene UI en el admin actualmente (solo existe en types/mocks)
+# Asiento  — el admin consulta mapa de asientos por viaje
+# MensajeReclamo — NO tiene UI en el admin (solo existe en types/mocks)
+
+# El contrato API del admin SOLO necesita endpoints GET de consulta para estas
+# entidades. La creación/edición es responsabilidad del frontend B2C.
+
+
+## 8. PÁGINAS CON MOCK INLINE (requieren rediseño completo)
+# Estas páginas usan datos mock inline con campos que NO coinciden con tipos canónicos.
+# Deben ser rediseñadas para consumir API real y mostrar campos correctos.
+
+# /agencias/[id]           — campos obsoletos: email, telefono, direccion, createdAt
+# /agencias/[id]/editar    — campos obsoletos: email, telefono, direccion; estado masc.
+# /flota/[id]              — campos obsoletos: marca, modelo, anio, capacidad, estado
+# /flota/[id]/editar       — campos obsoletos: marca, modelo, anio, capacidad
+# /rutas/[id]              — campos obsoletos: origen, destino, distanciaKm, duracionEstimada
+# /rutas/[id]/editar       — campos obsoletos: origen, destino, distanciaKm, duracionEstimada
+# /viajes/[id]/editar      — campos obsoletos: fechaSalida+horarioSalida (vs fechaHoraSalida correcta)
+# /configuracion           — mock inline ApiKeys con campos nombre, key (vs idAgencia, token)
+# /comisiones              — interfaz local Comision no alineada a Liquidacion/ConfiguracionComision
+# /manifiesto-sutran       — interfaz local Manifiesto no alineada a ManifiestoSutran
+
+
+## 9. ENUMS (según BD y tipos canónicos)
+EstadoViaje:      'programado' | 'en_curso' | 'finalizado' | 'cancelado'
+EstadoBoleto:     'activo' | 'cancelado'
+EstadoAgencia:    'activa' | 'suspendida'
+EstadoReclamo:    'abierto' | 'en_proceso' | 'resuelto'
+EstadoTicket:     'abierto' | 'en_revision' | 'resuelto'
+EstadoPago:       'pendiente' | 'completado' | 'fallido' | 'reembolsado'
+CanalVenta:       'app_bustoke' | 'ventanilla_fisica'
+TipoServicio:     'vip' | 'normal'
+RolUsuario:       'cliente' | 'admin_agencia' | 'superadmin'
+MetodoPago:       'yape' | 'plin' | 'tarjeta'
+
+
+## 10. REPORTES: columnas esperadas por slug
+# ventas:          AGENCIA, RUTA, FECHA VIAJE, PASAJEROS, MONTO TOTAL, COMISIÓN
+# viajes:          FECHA, RUTA, BUS, PASAJEROS, ESTADO
+# manifiesto-sutran: N° DOCUMENTO, NOMBRES, APELLIDOS, ASIENTO, ORIGEN, DESTINO
+
+
+## 11. OBSERVACIONES
+# 1. Los IDs deben ser strings (el frontend los trata como string).
+# 2. Fechas en ISO 8601 (parseadas con date-fns).
+# 3. Query params de filtro: from, to, page, limit, agenciaId, rutaId, busId,
+#    viajeId, estadoViaje, estadoPago, metodoPago, canalVenta.
+# 4. Respuesta paginada: { data: [], meta: { page, limit, totalItems, totalPages,
+#    hasPrevPage, hasNextPage } }.
+# 5. Reportes devuelven columnas+filas planas (arrays de strings/numbers).
+# 6. Los tipos Pago, Reembolso, MensajeReclamo, TarifaRuta, AuditLog,
+#    HistorialEstadoViaje existen en types.ts pero NO tienen UI en el admin.
+#    Se mantienen por completitud de esquema, pero su endpoint es innecesario
+#    para este frontend.
+# 7. El mock server (mock-server.js) devuelve formato VIEJO con campos
+#    obsoletos (email, telefono, marca, modelo, origen, destino). NO refleja
+#    los tipos canónicos actuales.
+# 8. Inconsistencias detectadas en componentes que usan canonical types:
+#    - soporte-columns usa color map con 'en_proceso' pero canonical es 'en_revision'
+#    - reclamos-columns referencia 'cerrado' que no existe en EstadoReclamo canonical
+#    - suscripciones-columns usa colores para 'activa'|'vencida'|'cancelada' pero
+#      estadoCobro usa EstadoPago ('pendiente'|'completado'|'fallido'|'reembolsado')
+
+
+# ============================================================================
+# CAMBIOS REQUERIDOS EN LA BASE DE DATOS — GAPS DETECTADOS
+# ============================================================================
+# Fecha: 2026-06-18
+# Propósito: Identificar vacíos del modelo actual para que el backend real
+#            soporte correctamente la operación y regulación de transporte.
+#
+# Prioridades: CRÍTICO = bloquea funcionalidad, IMPORTANTE = mejora significativa,
+#              DESEABLE = valor añadido a futuro
+# ============================================================================
+
+
+## GAP 1 — Conductores/Choferes (CRÍTICO)
+#
+# Evidencia:
+#   - El Manifiesto SUTRAN requiere identificar al conductor responsable del viaje
+#     (nombre completo, número de licencia, categoría, vigencia).
+#   - El frontend actual no tiene conductor porque no existe en BD ni en types.ts.
+#   - Sin conductor, el manifiesto SUTRAN es incompleto para SUNAT/SUTRAN.
+#
+# Propuesta de cambio en BD:
+#   Crear tabla conductores:
+#     id                     UUID PK
+#     nombres                VARCHAR(100) NOT NULL
+#     apellidoPaterno        VARCHAR(100) NOT NULL
+#     apellidoMaterno        VARCHAR(100)
+#     numeroLicencia         VARCHAR(20) NOT NULL UNIQUE
+#     categoriaLicencia      VARCHAR(5) NOT NULL  -- AIIIb, AIIIc, etc.
+#     fechaVencimientoLicencia DATE NOT NULL
+#     idAgencia              UUID FK → agencias (opcional, conductor puede ser tercero)
+#     activo                 BOOLEAN DEFAULT true
+#     fechaCreacion          TIMESTAMP
+#     fechaActualizacion     TIMESTAMP
+#
+#   Crear tabla viaje_tripulacion (asignación conductor + copiloto + terramoza a viaje):
+#     id                     UUID PK
+#     idViaje                UUID FK → viajes NOT NULL
+#     idConductor            UUID FK → conductores NOT NULL
+#     rol                    VARCHAR(20) NOT NULL  -- 'conductor', 'copiloto', 'terramoza'
+#     fechaAsignacion        TIMESTAMP
+#
+# Impacto funcional:
+#   - Manifiesto SUTRAN (admin + regulatorio): permite incluir datos del conductor
+#   - Viajes / detalle: muestra conductor asignado
+#   - Reportes: conductor por viaje
+#   - Auditoría: quién condujo cada viaje
+# Prioridad: CRÍTICO
+
+
+## GAP 2 — Documentos Vehiculares / SOAT + CIR + Revisiones (CRÍTICO)
+#
+# Evidencia:
+#   - El Manifiesto SUTRAN exige SOAT vigente, CIR (Certificado de Inscripción
+#     Registral) y revisión técnica al día.
+#   - El modelo Bus actual solo tiene placa y pisos. No hay lugar para registrar
+#     documentos obligatorios.
+#   - La vista /flota/[id] no muestra vigencias; el dashboard no alerta próxima
+#     renovación.
+#
+# Propuesta de cambio en BD:
+#   Crear tabla documentos_vehiculares:
+#     id                     UUID PK
+#     idBus                  UUID FK → buses NOT NULL
+#     tipo                   VARCHAR(30) NOT NULL  -- 'soat', 'cir', 'revision_tecnica', 'habilitacion'
+#     numeroDocumento        VARCHAR(50) NOT NULL
+#     fechaEmision           DATE NOT NULL
+#     fechaVencimiento       DATE NOT NULL
+#     archivoUrl             VARCHAR(500)
+#     activo                 BOOLEAN DEFAULT true
+#
+# Impacto funcional:
+#   - Manifiesto SUTRAN: muestra datos de SOAT, CIR, revisión técnica
+#   - Flota: alerta de documentos próximos a vencer
+#   - Dashboard: widget de alertas vehiculares
+#   - Reportes regulatorios
+# Prioridad: CRÍTICO
+
+
+## GAP 3 — Check-in / Abordaje de Pasajeros (IMPORTANTE)
+#
+# Evidencia:
+#   - La página /viajes/[id]/check-in existe pero el modelo Boleto solo tiene
+#     boolean 'usado' + 'fechaValidacion', sin trazabilidad de quién realizó
+#     el check-in ni en qué momento exacto.
+#   - No hay registro de "no abordó" (no-show) que es clave para reembolsos
+#     y reportes operativos.
+#
+# Propuesta de cambio en BD:
+#   Ampliar Boleto con:
+#     fechaCheckIn           TIMESTAMP (renombrar/ampliar fechaValidacion)
+#     idUsuarioCheckIn       UUID FK → usuarios (quién registró)
+#     noShow                 BOOLEAN DEFAULT false  -- no abordó
+#     fechaNoShow            TIMESTAMP
+#
+#   O crear tabla check_in independiente si se requiere historial por intento:
+#     id                     UUID PK
+#     idBoleto               UUID FK → boletos NOT NULL
+#     idViaje                UUID FK → viajes NOT NULL
+#     fechaHoraCheckIn       TIMESTAMP NOT NULL
+#     idUsuarioResponsable   UUID FK → usuarios
+#     tipo                   VARCHAR(20)  -- 'app', 'ventanilla'
+#     resultado              VARCHAR(20)  -- 'exitoso', 'no_show', 'rechazado'
+#
+# Impacto funcional:
+#   - Check-in: registro detallado con auditoría
+#   - Reembolsos: distinguir entre cancelado antes de viaje vs no-show
+#   - Reportes operativos: % de ocupación real vs no-shows
+#   - Estadísticas de pasajeros por viaje
+# Prioridad: IMPORTANTE
+
+
+## GAP 4 — Datos de Contacto y Ubicación de Agencia (IMPORTANTE)
+#
+# Evidencia:
+#   - Agencia actual solo tiene RUC, razón social y datos bancarios.
+#   - No tiene dirección, teléfono, email de contacto, ni referencia a distrito
+#     para ubicación geográfica (mientras que Terminal sí tiene idDistrito).
+#   - La UI de detalle de agencia muestra "—" para banco/cuenta pero no hay
+#     dónde mostrar datos de contacto reales.
+#
+# Propuesta de cambio en BD:
+#   Agregar columnas a agencias:
+#     idDistrito             UUID FK → distritos (nullable)
+#     direccion              VARCHAR(300)
+#     telefono               VARCHAR(20)
+#     emailContacto          VARCHAR(200)
+#     personaContacto        VARCHAR(200)
+#
+# Impacto funcional:
+#   - Detalle de agencia: muestra ubicación y contacto
+#   - Formulario de edición de agencia: campos para datos de contacto
+#   - Reportes: ubicación de agencias por distrito/ciudad
+# Prioridad: IMPORTANTE
+
+
+## GAP 5 — Precios por Asiento y Categorías (IMPORTANTE)
+#
+# Evidencia:
+#   - TarifaRuta tiene precio por tipoServicio (vip/normal), pero en la práctica
+#     asientos del mismo tipo pueden tener precios distintos (ventanilla vs pasillo,
+#     piso superior vs inferior).
+#   - La vista /viajes/[id]/asientos no muestra precios individuales.
+#
+# Propuesta de cambio en BD:
+#   Opción A — Agregar precioBase a Asiento:
+#     precioBase             DECIMAL(10,2) (sobreescribe TarifaRuta si se define)
+#
+#   Opción B — Tabla precios_asiento:
+#     id                     UUID PK
+#     idRuta                 UUID FK → rutas
+#     tipoServicio           TipoServicio
+#     piso                   INT
+#     fila                   VARCHAR(5)
+#     precio                 DECIMAL(10,2)
+#     (permite definir precios por fila dentro del mismo tipoServicio)
+#
+# Impacto funcional:
+#   - Boletos: precioFinal más granular
+#   - Mapa de asientos: muestra precio al seleccionar
+#   - Reportes financieros: desagregación por tipo de asiento
+# Prioridad: IMPORTANTE
+
+
+## GAP 6 — Datos de Facturación Electrónica en Agencia (IMPORTANTE)
+#
+# Evidencia:
+#   - Agencia tiene RUC (clave para facturación), pero no tiene configuración
+#     de serie/correlativo para comprobantes electrónicos.
+#   - El sistema B2C necesitará emitir facturas/boletas electrónicas por cada
+#     venta, y la agencia debe tener su propia numeración.
+#
+# Propuesta de cambio en BD:
+#   Agregar a agencias (o tabla separada configuracion_facturacion):
+#     tipoComprobanteDefault  VARCHAR(10)  -- 'factura', 'boleta'
+#     serieFactura            VARCHAR(5)
+#     correlativoFactura      INT
+#     serieBoleta             VARCHAR(5)
+#     correlativoBoleta       INT
+#
+# Impacto funcional:
+#   - Facturación electrónica desde el admin (futuro)
+#   - Reportes fiscales
+# Prioridad: IMPORTANTE
+
+
+## GAP 7 — Programación de Viajes / Frecuencias (DESEABLE)
+#
+# Evidencia:
+#   - Los viajes tienen fechaHoraSalida fija. No hay modelo de "frecuencia"
+#     (ej: "todos los días a las 08:00").
+#   - Para crear viajes recurrentes, el operador tendría que crearlos uno por uno.
+#
+# Propuesta de cambio en BD:
+#   Crear tabla frecuencias_viaje:
+#     id                     UUID PK
+#     idRuta                 UUID FK → rutas NOT NULL
+#     idBus                  UUID FK → buses NOT NULL
+#     horaSalida             TIME NOT NULL
+#     horaLlegada            TIME NOT NULL
+#     diasOperacion          VARCHAR(20)  -- 'lunes,martes,miercoles,...' o JSON array
+#     rampaEmbarque          VARCHAR(20)
+#     activo                 BOOLEAN DEFAULT true
+#     fechaInicio            DATE
+#     fechaFin               DATE (null = indefinido)
+#
+# Impacto funcional:
+#   - Viajes: generación automática desde frecuencias
+#   - Admin: interfaz para gestionar frecuencias por ruta
+# Prioridad: DESEABLE
+
+
+## GAP 8 — Historial de Precios / Temporadas (DESEABLE)
+#
+# Evidencia:
+#   - TarifaRuta tiene un precio fijo, pero los precios de transporte varían
+#     por temporada (alta/baja), anticipación, día de semana.
+#   - Boleto.precioFinal captura el precio en el momento, pero no hay trazabilidad
+#     de cuándo cambió la tarifa.
+#
+# Propuesta de cambio en BD:
+#   Crear tabla historial_precios_ruta:
+#     id                     UUID PK
+#     idTarifaRuta           UUID FK → tarifas_ruta
+#     precioAnterior         DECIMAL(10,2)
+#     precioNuevo            DECIMAL(10,2)
+#     fechaCambio            TIMESTAMP
+#     idUsuarioResponsable   UUID FK → usuarios
+#
+# Impacto funcional:
+#   - Reportes: evolución de precios por ruta
+#   - Auditoría de cambios de tarifa
+# Prioridad: DESEABLE
+
+
+## GAP 9 — Notificaciones y Alertas a Agencia (DESEABLE)
+#
+# Evidencia:
+#   - No hay modelo para notificaciones internas (vencimiento de documentos,
+#     reclamos nuevos, tickets de soporte, cambios de tarifa).
+#   - El dashboard muestra alertas hardcodeadas.
+#
+# Propuesta de cambio en BD:
+#   Crear tabla notificaciones:
+#     id                     UUID PK
+#     idAgencia              UUID FK → agencias (nullable, null = sistema)
+#     idUsuario              UUID FK → usuarios (nullable, null = todas)
+#     tipo                   VARCHAR(30)  -- 'vencimiento_documento', 'reclamo_nuevo', 'ticket_soporte', 'cambio_tarifa'
+#     titulo                 VARCHAR(200)
+#     mensaje                TEXT
+#     leido                  BOOLEAN DEFAULT false
+#     fechaCreacion          TIMESTAMP
+#     fechaLectura           TIMESTAMP
+#     referenciaId           VARCHAR(50)  -- ID de la entidad relacionada (boleto, reclamo, etc.)
+#
+# Impacto funcional:
+#   - Dashboard: alertas dinámicas desde BD
+#   - Header: campanita de notificaciones con contador
+#   - Agencias: centro de notificaciones
+# Prioridad: DESEABLE
+
+
+## GAP 10 — Enums Externos / Catálogos Dinámicos (IMPORTANTE)
+#
+# Evidencia:
+#   - Varios enums están hardcodeados en types.ts (EstadoViaje, EstadoBoleto,
+#     TipoServicio, CanalVenta, etc.).
+#   - Si el backend agrega un nuevo estado, el frontend no lo sabrá hasta
+#     que se actualice el código.
+#   - Los catálogos (TipoDocumento, Plan) ya existen en BD, pero Tipos de Servicio
+#     y Canales de Venta podrían ampliarse.
+#
+# Propuesta de cambio en BD:
+#   - Evaluar si ciertos enums deben ser tablas de catálogo en BD
+#     (ej: tipo_servicio, canal_venta) en lugar de ENUM PostgreSQL,
+#     para que el frontend pueda consultarlos vía API.
+#   - Endpoint de utilidad:
+#     GET /api/admin/catalogos  → { tipoServicio: [...], estadoViaje: [...], ... }
+#
+# Impacto funcional:
+#   - Frontend más resiliente a cambios de backend
+#   - Selectores dinámicos en lugar de maps hardcodeados
+#   - Administración de catálogos desde el admin (futuro)
+# Prioridad: IMPORTANTE
+
+
+## GAP 11 — Enriquecimiento de Manifiesto SUTRAN (CRÍTICO)
+#
+# Evidencia:
+#   - ManifiestoSutran actual es solo cabecera: idViaje, fechaGeneracion, estadoEnvio, respuestaApi.
+#   - Un manifiesto real debe contener: datos del conductor, datos del bus
+#     (placa, SOAT, CIR), datos de la empresa transportista, detalle de
+#     pasajeros con asientos, y ser enviado a SUTRAN vía API.
+#   - El frontend actual construye el manifiesto manualmente desde varias
+#     fuentes mock (getPasajeroById, getAsientoById, etc.).
+#
+# Propuesta de cambio en BD:
+#   Enriquecer ManifiestoSutran con:
+#     idConductor             UUID FK → conductores
+#     idBus                   UUID FK → buses (redundante con viaje, pero útil
+#                                        para el manifiesto independiente del viaje)
+#     numeroManifiesto        VARCHAR(50)  -- número asignado por SUTRAN
+#     jsonEnviado             JSONB  -- payload completo enviado
+#     jsonRespuesta           JSONB  -- respuesta completa de SUTRAN
+#     intentosEnvio           INT DEFAULT 0
+#     fechaProgramado         TIMESTAMP  -- cuándo debe enviarse (ej: 2h antes del viaje)
+#     fechaEnviado            TIMESTAMP
+#
+#   O alternativamente, mantener ManifiestoSutran como cabecera y crear
+#   ManifiestoPasajero como detalle:
+#     id                      UUID PK
+#     idManifiesto            UUID FK → manifiestos_sutran
+#     idBoleto                UUID FK → boletos
+#     idPasajero              UUID FK → pasajeros
+#     idAsiento               UUID FK → asientos
+#
+# Impacto funcional:
+#   - Manifiesto SUTRAN: datos completos para envío regulatorio
+#   - Administración de envíos: reintentos, seguimiento
+#   - Reportes regulatorios
+# Prioridad: CRÍTICO
+
+
+## GAP 12 — Seguimiento de Cancelaciones y Motivos (IMPORTANTE)
+#
+# Evidencia:
+#   - Boleto tiene estado 'cancelado' pero no hay campo para almacenar
+#     el motivo de cancelación ni quién la autorizó.
+#   - Viaje tiene estado 'cancelado' pero HistorialEstadoViaje cubre
+#     cambios de estado (sin motivo detallado obligatorio).
+#
+# Propuesta de cambio en BD:
+#   Agregar a Boleto:
+#     motivoCancelacion       VARCHAR(300)
+#     idUsuarioCancela        UUID FK → usuarios
+#     fechaCancelacion        TIMESTAMP
+#
+#   En HistorialEstadoViaje, hacer motivo obligatorio cuando el cambio es
+#   a 'cancelado', y agregar:
+#     idUsuarioResponsable    UUID FK → usuarios (ya existe, hacer NOT NULL
+#                                        cuando estadoNuevo = 'cancelado')
+#
+# Impacto funcional:
+#   - Reembolsos: justificación documentada
+#   - Auditoría: trazabilidad de cancelaciones
+#   - Reportes: análisis de causas de cancelación
+# Prioridad: IMPORTANTE

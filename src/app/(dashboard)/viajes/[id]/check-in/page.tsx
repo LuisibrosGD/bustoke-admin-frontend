@@ -1,0 +1,277 @@
+'use client';
+
+import { useState, useMemo } from 'react';
+import { useParams } from 'next/navigation';
+import { ClipboardCheck, SearchIcon, QrCode, BadgeCheck, XCircle, UserRoundX, ArrowUpDown } from 'lucide-react';
+import { Badge } from '@/components/ui/badge/badge';
+import { Input } from '@/components/ui/input/input';
+import { Button } from '@/components/ui/button/button';
+import {
+  getViajeById,
+  getRutaById,
+  getBoletosByViajeId,
+  getPasajeroById,
+  getAsientoById,
+  getTerminalById,
+} from '@/infrastructure/mock/data';
+
+type CheckInStatus = 'pendiente' | 'abordado' | 'no_show';
+
+interface CheckInRow {
+  id: string;
+  pasajero: string;
+  documento: string;
+  asientoNumero: string;
+  tipoAsiento: string;
+  estado: CheckInStatus;
+}
+
+const estadoVariant: Record<CheckInStatus, 'warning' | 'success' | 'danger'> = {
+  pendiente: 'warning',
+  abordado: 'success',
+  no_show: 'danger',
+};
+
+const estadoLabel: Record<CheckInStatus, string> = {
+  pendiente: 'Pendiente',
+  abordado: 'Abordado',
+  no_show: 'No Show',
+};
+
+const filterOptions: { label: string; value: CheckInStatus | 'todos' }[] = [
+  { label: 'Todos', value: 'todos' },
+  { label: 'Pendiente', value: 'pendiente' },
+  { label: 'Abordado', value: 'abordado' },
+  { label: 'No Show', value: 'no_show' },
+];
+
+export default function CheckinViajePage() {
+  const params = useParams<{ id: string }>();
+  const viaje = getViajeById(params.id);
+  const ruta = viaje ? getRutaById(viaje.idRuta) : undefined;
+  const terminalOrigen = ruta ? getTerminalById(ruta.idTerminalOrigen) : undefined;
+  const terminalDestino = ruta ? getTerminalById(ruta.idTerminalDestino) : undefined;
+
+  const [search, setSearch] = useState('');
+  const [filter, setFilter] = useState<CheckInStatus | 'todos'>('todos');
+  const [rows, setRows] = useState<CheckInRow[]>(() => {
+    const boletos = viaje ? getBoletosByViajeId(viaje.id) : [];
+    return boletos.map((b) => {
+      const pasajero = getPasajeroById(b.idPasajero);
+      const asiento = getAsientoById(b.idAsiento);
+      return {
+        id: b.id,
+        pasajero: pasajero ? `${pasajero.nombres} ${pasajero.apellidoPaterno} ${pasajero.apellidoMaterno}` : '—',
+        documento: pasajero?.numeroDocumento ?? '—',
+        asientoNumero: asiento?.numeroAsiento ?? '—',
+        tipoAsiento: asiento?.tipoServicio ?? '—',
+        estado: 'pendiente' as CheckInStatus,
+      };
+    });
+  });
+
+  const filtered = useMemo(() => {
+    let result = rows;
+    if (filter !== 'todos') {
+      result = result.filter((r) => r.estado === filter);
+    }
+    if (search) {
+      const lower = search.toLowerCase();
+      result = result.filter(
+        (r) =>
+          r.pasajero.toLowerCase().includes(lower) ||
+          r.documento.toLowerCase().includes(lower) ||
+          r.asientoNumero.toLowerCase().includes(lower)
+      );
+    }
+    return result;
+  }, [rows, search, filter]);
+
+  const counts = useMemo(() => {
+    const total = rows.length;
+    const pendiente = rows.filter((r) => r.estado === 'pendiente').length;
+    const abordado = rows.filter((r) => r.estado === 'abordado').length;
+    const noShow = rows.filter((r) => r.estado === 'no_show').length;
+    return { total, pendiente, abordado, noShow };
+  }, [rows]);
+
+  function handleCheckIn(id: string) {
+    setRows((prev) =>
+      prev.map((r) => (r.id === id ? { ...r, estado: 'abordado' as const } : r))
+    );
+  }
+
+  function handleNoShow(id: string) {
+    setRows((prev) =>
+      prev.map((r) => (r.id === id ? { ...r, estado: 'no_show' as const } : r))
+    );
+  }
+
+  function handleMarkAllAbordado() {
+    setRows((prev) =>
+      prev.map((r) => (r.estado === 'pendiente' ? { ...r, estado: 'abordado' as const } : r))
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+        <div className="bg-white rounded-xl border border-neutral-200 shadow-sm p-4">
+          <p className="text-sm text-neutral-500">Total pasajeros</p>
+          <p className="text-2xl font-bold text-neutral-900">{counts.total}</p>
+        </div>
+        <div className="bg-yellow-50 rounded-xl border border-yellow-200 shadow-sm p-4">
+          <p className="text-sm text-yellow-600 font-medium">Pendientes</p>
+          <p className="text-2xl font-bold text-yellow-700">{counts.pendiente}</p>
+        </div>
+        <div className="bg-green-50 rounded-xl border border-green-200 shadow-sm p-4">
+          <p className="text-sm text-green-600 font-medium">Abordados</p>
+          <p className="text-2xl font-bold text-green-700">{counts.abordado}</p>
+        </div>
+        <div className="bg-red-50 rounded-xl border border-red-200 shadow-sm p-4">
+          <p className="text-sm text-red-600 font-medium">No Show</p>
+          <p className="text-2xl font-bold text-red-700">{counts.noShow}</p>
+        </div>
+      </div>
+
+      <div className="bg-white rounded-xl border border-neutral-200 shadow-sm">
+        <div className="px-6 py-4 border-b border-neutral-100">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <ClipboardCheck className="size-5 text-purple-600" />
+              <h2 className="text-base font-semibold text-neutral-900">Control de Abordaje</h2>
+              {ruta && terminalOrigen && terminalDestino && (
+                <span className="text-sm text-neutral-500 ml-2 hidden sm:inline">
+                  {terminalOrigen.nombre} → {terminalDestino.nombre}
+                </span>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" size="sm" disabled>
+                <QrCode className="size-4 mr-1.5" />
+                Escanear
+              </Button>
+              {counts.pendiente > 0 && (
+                <Button variant="outline" size="sm" onClick={handleMarkAllAbordado}>
+                  <BadgeCheck className="size-4 mr-1.5" />
+                  Abordar todos
+                </Button>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-3 px-6 py-3 border-b border-neutral-100">
+          <div className="relative flex-1 max-w-xs">
+            <SearchIcon className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-neutral-400" />
+            <Input
+              placeholder="Buscar por nombre, DNI o asiento..."
+              className="pl-9"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
+          <div className="flex items-center gap-1">
+            {filterOptions.map((opt) => (
+              <Button
+                key={opt.value}
+                variant={filter === opt.value ? 'default' : 'ghost'}
+                size="sm"
+                onClick={() => setFilter(opt.value)}
+                className="text-xs"
+              >
+                {opt.label}
+              </Button>
+            ))}
+          </div>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-neutral-100 bg-neutral-50/50">
+                <th className="text-left px-6 py-3 font-medium text-neutral-500">Pasajero</th>
+                <th className="text-left px-6 py-3 font-medium text-neutral-500">Documento</th>
+                <th className="text-left px-6 py-3 font-medium text-neutral-500">Asiento</th>
+                <th className="text-left px-6 py-3 font-medium text-neutral-500">Tipo</th>
+                <th className="text-left px-6 py-3 font-medium text-neutral-500">Estado</th>
+                <th className="text-right px-6 py-3 font-medium text-neutral-500">Acción</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="px-6 py-12 text-center text-sm text-neutral-400">
+                    No se encontraron pasajeros con ese filtro.
+                  </td>
+                </tr>
+              ) : (
+                filtered.map((row) => (
+                  <tr key={row.id} className="border-b border-neutral-100 last:border-0 hover:bg-neutral-50/50 transition-colors">
+                    <td className="px-6 py-3">
+                      <span className="font-medium text-neutral-900">{row.pasajero}</span>
+                    </td>
+                    <td className="px-6 py-3 text-neutral-600 font-mono">{row.documento}</td>
+                    <td className="px-6 py-3 text-neutral-900 font-medium">{row.asientoNumero}</td>
+                    <td className="px-6 py-3">
+                      <Badge variant="neutral">{row.tipoAsiento}</Badge>
+                    </td>
+                    <td className="px-6 py-3">
+                      <Badge variant={estadoVariant[row.estado]}>
+                        {estadoLabel[row.estado]}
+                      </Badge>
+                    </td>
+                    <td className="px-6 py-3 text-right">
+                      {row.estado === 'pendiente' && (
+                        <div className="flex items-center justify-end gap-1">
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            className="size-7 text-green-600 hover:text-green-700 hover:bg-green-50"
+                            title="Marcar como abordado"
+                            onClick={() => handleCheckIn(row.id)}
+                          >
+                            <BadgeCheck className="size-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            className="size-7 text-red-500 hover:text-red-600 hover:bg-red-50"
+                            title="Marcar como No Show"
+                            onClick={() => handleNoShow(row.id)}
+                          >
+                            <UserRoundX className="size-4" />
+                          </Button>
+                        </div>
+                      )}
+                      {row.estado === 'abordado' && (
+                        <span className="text-xs text-green-600 flex items-center justify-end gap-1">
+                          <BadgeCheck className="size-3.5" /> Registrado
+                        </span>
+                      )}
+                      {row.estado === 'no_show' && (
+                        <span className="text-xs text-red-500 flex items-center justify-end gap-1">
+                          <XCircle className="size-3.5" /> No abordó
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="px-6 py-3 border-t border-neutral-100 text-xs text-neutral-400 flex items-center justify-between">
+          <span>
+            Mostrando {filtered.length} de {rows.length} pasajeros
+          </span>
+          <span className="flex items-center gap-1">
+            <ArrowUpDown className="size-3" />
+            Los cambios se aplican en tiempo real
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
