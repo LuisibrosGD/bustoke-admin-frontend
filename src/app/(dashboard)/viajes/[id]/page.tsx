@@ -1,13 +1,14 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { Badge } from '@/components/ui/badge/badge';
 import { Button } from '@/components/ui/button/button';
-import { ArrowLeft, Calendar, Users, Bus, Route, Ticket, ClipboardCheck, Armchair, FileSpreadsheet, ArrowRight } from 'lucide-react';
-import { getViajeById, getRutaById, getBusById, getTerminalById, getBoletosByViajeId } from '@/infrastructure/mock/data';
-import { format } from 'date-fns';
-import { es } from 'date-fns/locale';
+import { Skeleton } from '@/components/ui';
+import { ArrowLeft, Calendar, Users, Bus as BusIcon, Route, Ticket, ClipboardCheck, Armchair, FileSpreadsheet, ArrowRight } from 'lucide-react';
+import { viajeRepository, rutaRepository, busRepository, boletoRepository, terminalRepository } from '@/infrastructure/repositories';
+import type { Viaje, Ruta, Bus, Terminal } from '@/infrastructure/domain/types';
 
 const estadoBadgeVariant: Record<string, 'info' | 'warning' | 'success' | 'danger'> = {
   programado: 'info',
@@ -34,12 +35,43 @@ function InfoRow({ label, value }: { label: string; value: string | React.ReactN
 
 export default function ViajeDetailPage() {
   const params = useParams<{ id: string }>();
-  const viaje = getViajeById(params.id);
-  const ruta = viaje ? getRutaById(viaje.idRuta) : undefined;
-  const bus = viaje ? getBusById(viaje.idBus) : undefined;
-  const terminalOrigen = ruta ? getTerminalById(ruta.idTerminalOrigen) : undefined;
-  const terminalDestino = ruta ? getTerminalById(ruta.idTerminalDestino) : undefined;
-  const totalBoletos = viaje ? getBoletosByViajeId(viaje.id).length : 0;
+  const [viaje, setViaje] = useState<Viaje | null>(null);
+  const [ruta, setRuta] = useState<Ruta | null>(null);
+  const [bus, setBus] = useState<Bus | null>(null);
+  const [terminalOrigen, setTerminalOrigen] = useState<Terminal | null>(null);
+  const [terminalDestino, setTerminalDestino] = useState<Terminal | null>(null);
+  const [totalBoletos, setTotalBoletos] = useState(0);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const v = await viajeRepository.getById(params.id);
+        if (!v) { setLoading(false); return; }
+        setViaje(v);
+        const [r, b, boletos] = await Promise.all([
+          rutaRepository.getById(v.idRuta),
+          busRepository.getById(v.idBus),
+          boletoRepository.getByViaje(v.id),
+        ]);
+        setTotalBoletos(boletos.length);
+        if (r) {
+          setRuta(r);
+          const [tO, tD] = await Promise.all([
+            terminalRepository.getById(r.idTerminalOrigen),
+            terminalRepository.getById(r.idTerminalDestino),
+          ]);
+          if (tO) setTerminalOrigen(tO);
+          if (tD) setTerminalDestino(tD);
+        }
+        if (b) setBus(b);
+      } catch {} finally {
+        setLoading(false);
+      }
+    })();
+  }, [params.id]);
+
+  if (loading) return <div className="p-6 space-y-4">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-24 w-full rounded-xl" />)}</div>;
 
   if (!viaje) {
     return (
@@ -54,7 +86,8 @@ export default function ViajeDetailPage() {
     );
   }
 
-  const fechaHoraSalida = format(new Date(viaje.fechaHoraSalida), 'dd/MM/yyyy HH:mm', { locale: es });
+  const fechaHoraSalida = new Date(viaje.fechaHoraSalida).toLocaleString('es-PE');
+  const fechaHoraLlegada = new Date(viaje.fechaHoraLlegada).toLocaleString('es-PE');
 
   return (
     <div className="space-y-6">
@@ -64,15 +97,9 @@ export default function ViajeDetailPage() {
             <Calendar className="size-5 text-neutral-500" />
             <h2 className="text-base font-semibold text-neutral-900">Programación</h2>
           </div>
-          <InfoRow
-            label="Fecha"
-            value={
-              <span className="flex items-center gap-1.5">
-                <Calendar className="size-3.5 text-neutral-400" />
-                {fechaHoraSalida}
-              </span>
-            }
-          />
+          <InfoRow label="Salida" value={fechaHoraSalida} />
+          <InfoRow label="Llegada" value={fechaHoraLlegada} />
+          <InfoRow label="Rampa" value={viaje.rampaEmbarque} />
           <InfoRow
             label="Pasajeros"
             value={
@@ -93,28 +120,24 @@ export default function ViajeDetailPage() {
         </div>
 
         <div className="space-y-4">
-          {ruta && (
-            <div className="bg-white rounded-xl border border-neutral-200 shadow-sm p-5 flex items-center gap-4">
-              <div className="flex items-center justify-center size-12 rounded-lg bg-blue-50 text-blue-600">
-                <Route className="size-6" />
-              </div>
-              <div>
-                <p className="text-sm text-neutral-500">Ruta</p>
-                <p className="text-sm font-medium text-neutral-900">{terminalOrigen?.nombre ?? '—'} → {terminalDestino?.nombre ?? '—'}</p>
-              </div>
+          <div className="bg-white rounded-xl border border-neutral-200 shadow-sm p-5 flex items-center gap-4">
+            <div className="flex items-center justify-center size-12 rounded-lg bg-blue-50 text-blue-600">
+              <Route className="size-6" />
             </div>
-          )}
-          {bus && (
-            <div className="bg-white rounded-xl border border-neutral-200 shadow-sm p-5 flex items-center gap-4">
-              <div className="flex items-center justify-center size-12 rounded-lg bg-emerald-50 text-emerald-600">
-                <Bus className="size-6" />
-              </div>
-              <div>
-                <p className="text-sm text-neutral-500">Bus</p>
-                <p className="text-sm font-medium text-neutral-900">{bus.placa}</p>
-              </div>
+            <div>
+              <p className="text-sm text-neutral-500">Ruta</p>
+              <p className="text-sm font-medium text-neutral-900">{terminalOrigen?.nombre ?? '—'} → {terminalDestino?.nombre ?? '—'}</p>
             </div>
-          )}
+          </div>
+          <div className="bg-white rounded-xl border border-neutral-200 shadow-sm p-5 flex items-center gap-4">
+            <div className="flex items-center justify-center size-12 rounded-lg bg-emerald-50 text-emerald-600">
+              <BusIcon className="size-6" />
+            </div>
+            <div>
+              <p className="text-sm text-neutral-500">Bus</p>
+              <p className="text-sm font-medium text-neutral-900">{bus?.placa ?? viaje.idBus}</p>
+            </div>
+          </div>
         </div>
       </div>
 

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button/button';
@@ -9,33 +9,56 @@ import { Label } from '@/components/ui/label/label';
 import { Separator } from '@/components/ui/separator/separator';
 import { ArrowLeft, Save } from 'lucide-react';
 import { toast } from 'sonner';
-import { getBusById, getAgenciaById } from '@/infrastructure/mock/data';
+import { busRepository, agenciaRepository } from '@/infrastructure/repositories';
+import type { Bus, Agencia } from '@/infrastructure/domain/types';
 
 export default function EditarBusPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
-  const bus = getBusById(params.id);
 
+  const [bus, setBus] = useState<Bus | null>(null);
+  const [agencia, setAgencia] = useState<Agencia | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [placa, setPlaca] = useState('');
+  const [cantidadPisos, setCantidadPisos] = useState('1');
   const [submitting, setSubmitting] = useState(false);
 
-  if (!bus) {
-    return (
-      <div className="p-6 text-center text-muted-foreground">
-        Bus no encontrado
-      </div>
-    );
-  }
+  useEffect(() => {
+    (async () => {
+      try {
+        const b = await busRepository.getById(params.id);
+        if (!b) { setLoading(false); return; }
+        setBus(b);
+        setPlaca(b.placa);
+        setCantidadPisos(String(b.cantidadPisos));
+        const a = await agenciaRepository.getById(b.idAgencia);
+        setAgencia(a);
+      } catch {}
+      setLoading(false);
+    })();
+  }, [params.id]);
 
-  const agencia = getAgenciaById(bus.idAgencia);
-
-  const handleSubmit = (e: React.FormEvent) => {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (!bus) return;
     setSubmitting(true);
-    setTimeout(() => {
+    try {
+      await busRepository.update(bus.id, { placa, cantidadPisos: parseInt(cantidadPisos) || 1 });
       toast.success('Bus actualizado correctamente');
       router.push(`/flota/${params.id}`);
-    }, 600);
-  };
+    } catch {
+      toast.error('Error al actualizar el bus');
+    }
+    setSubmitting(false);
+  }
+
+  if (loading) {
+    return <div className="p-6 text-center text-muted-foreground">Cargando...</div>;
+  }
+
+  if (!bus) {
+    return <div className="p-6 text-center text-muted-foreground">Bus no encontrado</div>;
+  }
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
@@ -57,11 +80,11 @@ export default function EditarBusPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="placa">Placa</Label>
-              <Input id="placa" defaultValue={bus.placa} />
+              <Input id="placa" placeholder="Ej: ABC-123" value={placa} onChange={(e) => setPlaca(e.target.value)} />
             </div>
             <div className="space-y-2">
               <Label htmlFor="cantidadPisos">Cantidad de Pisos</Label>
-              <Input id="cantidadPisos" type="number" defaultValue={String(bus.cantidadPisos)} />
+              <Input id="cantidadPisos" type="number" min={1} max={2} value={cantidadPisos} onChange={(e) => setCantidadPisos(e.target.value)} />
             </div>
           </div>
         </div>

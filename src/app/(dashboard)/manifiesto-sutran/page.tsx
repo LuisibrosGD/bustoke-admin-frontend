@@ -1,9 +1,10 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Search, Eye } from 'lucide-react';
 import { Badge, Button, Input, Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui';
-import { MOCK_MANIFIESTOS_SUTRAN, getViajeById, getRutaById, getTerminalById, getBusById } from '@/infrastructure/mock/data';
+import { manifiestoRepository } from '@/infrastructure/repositories';
+import type { ManifiestoSutran } from '@/infrastructure/domain/types';
 
 const ESTADO_VARIANT: Record<string, 'info' | 'warning' | 'success' | 'danger'> = {
   enviado: 'success',
@@ -11,48 +12,27 @@ const ESTADO_VARIANT: Record<string, 'info' | 'warning' | 'success' | 'danger'> 
   error: 'danger',
 };
 
-interface ManifiestoDisplay {
-  id: string;
-  numero: string;
-  fecha: string;
-  origen: string;
-  destino: string;
-  bus: string;
-  estado: string;
-}
-
-function buildManifiestos(): ManifiestoDisplay[] {
-  return MOCK_MANIFIESTOS_SUTRAN.map((m) => {
-    const viaje = getViajeById(m.idViaje);
-    const ruta = viaje ? getRutaById(viaje.idRuta) : null;
-    const tOrigen = ruta ? getTerminalById(ruta.idTerminalOrigen) : null;
-    const tDestino = ruta ? getTerminalById(ruta.idTerminalDestino) : null;
-    const bus = viaje ? getBusById(viaje.idBus) : null;
-
-    const origen = tOrigen?.nombre?.split(' - ')[0] ?? ruta?.idTerminalOrigen ?? '?';
-    const destino = tDestino?.nombre?.split(' - ')[0] ?? ruta?.idTerminalDestino ?? '?';
-
-    return {
-      id: m.id,
-      numero: `MAN-${m.idViaje.padStart(3, '0')}-${m.fechaGeneracion.slice(0, 4)}`,
-      fecha: new Date(m.fechaGeneracion).toLocaleDateString('es-PE'),
-      origen,
-      destino,
-      bus: bus?.placa ?? '?',
-      estado: m.estadoEnvio,
-    };
-  });
-}
-
 export default function ManifiestoSutranPage() {
+  const [data, setData] = useState<ManifiestoSutran[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
-  const manifiestos = buildManifiestos();
 
-  const filtered = manifiestos.filter((m) =>
-    Object.values(m).some((v) =>
+  useEffect(() => {
+    manifiestoRepository.list()
+      .then(setData)
+      .catch((e) => setError(e instanceof Error ? e.message : 'Error al cargar'))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const filtered = data.filter((m) =>
+    [m.id, m.idViaje, m.estadoEnvio].some((v) =>
       String(v).toLowerCase().includes(search.toLowerCase())
     )
   );
+
+  if (loading) return <div className="p-6 text-muted-foreground">Cargando manifiestos...</div>;
+  if (error) return <div className="p-6 text-red-500">Error: {error}</div>;
 
   return (
     <div className="space-y-6">
@@ -77,25 +57,19 @@ export default function ManifiestoSutranPage() {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>N° Manifiesto</TableHead>
-              <TableHead>Fecha</TableHead>
-              <TableHead>Origen</TableHead>
-              <TableHead>Destino</TableHead>
-              <TableHead>Bus</TableHead>
-              <TableHead>Estado</TableHead>
+              <TableHead>ID Viaje</TableHead>
+              <TableHead>Fecha generacion</TableHead>
+              <TableHead>Estado envio</TableHead>
               <TableHead className="text-right">Acciones</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {filtered.map((m) => (
               <TableRow key={m.id}>
-                <TableCell className="font-medium text-neutral-900">{m.numero}</TableCell>
-                <TableCell>{m.fecha}</TableCell>
-                <TableCell>{m.origen}</TableCell>
-                <TableCell>{m.destino}</TableCell>
-                <TableCell>{m.bus}</TableCell>
+                <TableCell className="font-medium text-neutral-900">{m.idViaje}</TableCell>
+                <TableCell>{new Date(m.fechaGeneracion).toLocaleDateString('es-PE')}</TableCell>
                 <TableCell>
-                  <Badge variant={ESTADO_VARIANT[m.estado] || 'neutral'}>{m.estado}</Badge>
+                  <Badge variant={ESTADO_VARIANT[m.estadoEnvio] || 'neutral'}>{m.estadoEnvio}</Badge>
                 </TableCell>
                 <TableCell className="text-right">
                   <Button variant="ghost" size="icon-sm">
@@ -106,7 +80,7 @@ export default function ManifiestoSutranPage() {
             ))}
             {filtered.length === 0 && (
               <TableRow>
-                <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                <TableCell colSpan={4} className="text-center py-8 text-muted-foreground">
                   No se encontraron manifiestos.
                 </TableCell>
               </TableRow>

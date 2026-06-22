@@ -1,24 +1,72 @@
-import { MockRepository } from './mock-repository';
-import {
-  MOCK_TERMINALES,
-  MOCK_AGENCIA_TERMINALES,
-} from '@/infrastructure/mock/data';
-import type { Terminal } from '@/infrastructure/domain/types';
+import type { Terminal, AgenciaTerminal } from '@/infrastructure/domain/types';
 
-export class TerminalRepository extends MockRepository<Terminal> {
-  constructor() {
-    super(MOCK_TERMINALES);
+const API = '/api';
+
+async function request<T>(path: string, options?: RequestInit): Promise<T> {
+  const res = await fetch(`${API}${path}`, {
+    headers: { 'Content-Type': 'application/json' },
+    ...options,
+  });
+  if (!res.ok) throw new Error(`API error: ${res.status} ${res.statusText}`);
+  return res.json();
+}
+
+export class TerminalRepository {
+  async list(params?: Record<string, string>): Promise<Terminal[]> {
+    const query = params ? '?' + new URLSearchParams(params).toString() : '';
+    return request<Terminal[]>(`/admin/terminales${query}`);
+  }
+
+  async getById(id: string): Promise<Terminal | null> {
+    return request<Terminal>(`/admin/terminales/${id}`);
   }
 
   async findByAgencia(agenciaId: string): Promise<Terminal[]> {
-    await new Promise((r) => setTimeout(r, 200));
+    return request<Terminal[]>(`/admin/terminales?idAgencia=${agenciaId}`);
+  }
 
-    const terminalIds = MOCK_AGENCIA_TERMINALES
-      .filter((at) => at.idAgencia === agenciaId)
-      .map((at) => at.idTerminal);
+  async create(data: Partial<Terminal>): Promise<Terminal> {
+    return request<Terminal>('/admin/terminales', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
 
-    return this.items.filter((item) => terminalIds.includes(item.id));
+  async update(id: string, data: Partial<Terminal>): Promise<Terminal> {
+    return request<Terminal>(`/admin/terminales/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async delete(id: string): Promise<boolean> {
+    await request<void>(`/admin/terminales/${id}`, { method: 'DELETE' });
+    return true;
+  }
+}
+
+export class AgenciaTerminalRepository {
+  async list(params?: Record<string, string>): Promise<AgenciaTerminal[]> {
+    const query = params ? '?' + new URLSearchParams(params).toString() : '';
+    return request<AgenciaTerminal[]>(`/admin/agencias-terminales${query}`);
+  }
+
+  async findByAgencia(agenciaId: string): Promise<AgenciaTerminal[]> {
+    return request<AgenciaTerminal[]>(`/admin/agencias-terminales?idAgencia=${agenciaId}`);
+  }
+
+  async create(data: Partial<AgenciaTerminal>): Promise<AgenciaTerminal> {
+    return request<AgenciaTerminal>('/admin/agencias-terminales', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async delete(id: string): Promise<boolean> {
+    await request<void>(`/admin/agencias-terminales/${id}`, { method: 'DELETE' });
+    return true;
   }
 }
 
 export const terminalRepository = new TerminalRepository();
+export const agenciaTerminalRepository = new AgenciaTerminalRepository();

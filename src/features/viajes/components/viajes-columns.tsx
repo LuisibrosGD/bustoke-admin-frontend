@@ -1,9 +1,9 @@
 'use client';
 
+import { useMemo } from 'react';
 import { ColumnDef } from '@tanstack/react-table';
 import { Badge } from '@/components/ui';
-import type { Viaje } from '@/infrastructure/domain/types';
-import { getRutaById, getBusById, getTerminalById } from '@/infrastructure/mock/data';
+import type { Viaje, Ruta, Bus, Terminal } from '@/infrastructure/domain/types';
 
 const estColor: Record<string, string> = {
   programado: 'bg-blue-100 text-blue-800 border-transparent',
@@ -19,38 +19,64 @@ const estLabel: Record<string, string> = {
   cancelado: 'Cancelado',
 };
 
-export const viajesColumns: ColumnDef<Viaje>[] = [
-  {
-    accessorKey: 'fechaHoraSalida',
-    header: 'Salida',
-    cell: ({ row }) => new Date(row.getValue('fechaHoraSalida')).toLocaleString('es-PE'),
-  },
-  {
-    id: 'ruta',
-    header: 'Ruta',
-    cell: ({ row }) => {
-      const ruta = getRutaById(row.original.idRuta);
-      if (!ruta) return row.original.idRuta;
-      const origen = getTerminalById(ruta.idTerminalOrigen);
-      const destino = getTerminalById(ruta.idTerminalDestino);
-      return <span>{origen?.nombre ?? '?'} → {destino?.nombre ?? '?'}</span>;
+export function useViajesColumns(
+  rutas: Ruta[],
+  buses: Bus[],
+  terminales: Terminal[],
+) {
+  const rutasMap = useMemo(() => new Map(rutas.map((r) => [r.id, r])), [rutas]);
+  const busesMap = useMemo(() => new Map(buses.map((b) => [b.id, b])), [buses]);
+  const terminalesMap = useMemo(() => new Map(terminales.map((t) => [t.id, t])), [terminales]);
+
+  const columns: ColumnDef<Viaje>[] = useMemo(() => [
+    {
+      accessorKey: 'fechaHoraSalida',
+      header: 'Salida',
+      cell: ({ row }) => new Date(row.getValue('fechaHoraSalida')).toLocaleString('es-PE'),
     },
-  },
-  {
-    id: 'bus',
-    header: 'Bus',
-    cell: ({ row }) => {
-      const bus = getBusById(row.original.idBus);
-      return <span>{bus?.placa ?? row.original.idBus}</span>;
+    {
+      accessorKey: 'fechaHoraLlegada',
+      header: 'Llegada',
+      cell: ({ row }) => new Date(row.getValue('fechaHoraLlegada')).toLocaleString('es-PE'),
     },
-  },
-  { accessorKey: 'rampaEmbarque', header: 'Rampa' },
-  {
-    accessorKey: 'estado',
-    header: 'Estado',
-    cell: ({ row }) => {
-      const v = row.getValue<string>('estado');
-      return <Badge variant="outline" className={estColor[v]}>{estLabel[v] || v}</Badge>;
+    {
+      id: 'terminalOrigen',
+      header: 'Terminal Origen',
+      cell: ({ row }) => {
+        const ruta = rutasMap.get(row.original.idRuta);
+        if (!ruta) return <span className="text-muted-foreground">?</span>;
+        const t = terminalesMap.get(ruta.idTerminalOrigen);
+        return <span>{t?.nombre ?? ruta.idTerminalOrigen}</span>;
+      },
     },
-  },
-];
+    {
+      id: 'terminalDestino',
+      header: 'Terminal Destino',
+      cell: ({ row }) => {
+        const ruta = rutasMap.get(row.original.idRuta);
+        if (!ruta) return <span className="text-muted-foreground">?</span>;
+        const t = terminalesMap.get(ruta.idTerminalDestino);
+        return <span>{t?.nombre ?? ruta.idTerminalDestino}</span>;
+      },
+    },
+    {
+      id: 'bus',
+      header: 'Bus',
+      cell: ({ row }) => {
+        const bus = busesMap.get(row.original.idBus);
+        return <span>{bus?.placa ?? <span className="text-muted-foreground">{row.original.idBus}</span>}</span>;
+      },
+    },
+    { accessorKey: 'rampaEmbarque', header: 'Rampa' },
+    {
+      accessorKey: 'estado',
+      header: 'Estado',
+      cell: ({ row }) => {
+        const v = row.getValue<string>('estado');
+        return <Badge variant="outline" className={estColor[v]}>{estLabel[v] || v}</Badge>;
+      },
+    },
+  ], [rutasMap, busesMap, terminalesMap]);
+
+  return columns;
+}

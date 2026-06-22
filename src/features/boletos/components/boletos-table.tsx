@@ -1,27 +1,49 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { useSession } from 'next-auth/react';
 import { Input, Spinner } from '@/components/ui';
 import { SearchIcon, Ticket } from 'lucide-react';
 import { DataTable } from '@/components/ui/data-table/data-table';
-import { useRepository } from '@/infrastructure/hooks';
-import { MockRepository } from '@/infrastructure/repositories';
-import { MOCK_BOLETOS } from '@/infrastructure/mock/data';
+import { boletoRepository } from '@/infrastructure/repositories';
 import type { Boleto } from '@/infrastructure/domain/types';
 import { boletosColumns } from './boletos-columns';
 import { DataTableEmpty } from '@/components/ui/data-table/data-table-empty';
 
-class BoletoRepository extends MockRepository<Boleto> {
-  constructor() {
-    super(MOCK_BOLETOS);
-  }
-}
-
-const boletoRepository = new BoletoRepository();
-
 export function BoletosTable() {
-  const { data, isLoading, error } = useRepository(boletoRepository);
+  const { data: session } = useSession();
+  const [data, setData] = useState<Boleto[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [s, setS] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      setIsLoading(true);
+      setError(null);
+      try {
+        const token = session?.user?.accessToken;
+        let params: Record<string, string> | undefined;
+        if (token) {
+          const payload = JSON.parse(atob(token.split('.')[1]));
+          const rol = payload.rol;
+          const idAgencia = payload.id_agencia;
+          if (rol === 'admin_agencia' && idAgencia) {
+            params = { id_agencia: String(idAgencia) };
+          }
+        }
+        const result = await boletoRepository.list(params);
+        if (!cancelled) setData(result);
+      } catch (err) {
+        if (!cancelled) setError(err instanceof Error ? err.message : 'Error al cargar boletos');
+      } finally {
+        if (!cancelled) setIsLoading(false);
+      }
+    }
+    load();
+    return () => { cancelled = true; };
+  }, [session]);
 
   const f = useMemo(() => {
     if (!s) return data;

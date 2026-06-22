@@ -1,8 +1,11 @@
 'use client';
 
-import { Badge, Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui';
-import { DollarSign, Clock, TrendingUp } from 'lucide-react';
-import { MOCK_LIQUIDACIONES, getAgenciaById } from '@/infrastructure/mock/data';
+import { useState, useEffect } from 'react';
+import { Badge, Button, Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui';
+import { DollarSign, Clock, TrendingUp, CheckCircle } from 'lucide-react';
+import { liquidacionRepository } from '@/infrastructure/repositories';
+import type { Liquidacion } from '@/infrastructure/domain/types';
+import { useSession } from 'next-auth/react';
 
 const ESTADO_VARIANT: Record<string, 'warning' | 'success' | 'danger' | 'neutral'> = {
   pendiente: 'warning',
@@ -12,22 +15,60 @@ const ESTADO_VARIANT: Record<string, 'warning' | 'success' | 'danger' | 'neutral
 };
 
 export default function ComisionesPage() {
-  const totalPendiente = MOCK_LIQUIDACIONES
+  const { data: session } = useSession();
+  const [data, setData] = useState<Liquidacion[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [updating, setUpdating] = useState<string | null>(null);
+
+  const role = session?.user?.role ?? (() => {
+    try {
+      const token = session?.user?.accessToken;
+      if (!token) return undefined;
+      const b64 = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+      return JSON.parse(atob(b64)).rol;
+    } catch { return undefined; }
+  })();
+  const isSuperAdmin = role === 'superadmin';
+
+  useEffect(() => {
+    liquidacionRepository.list()
+      .then(setData)
+      .catch((e) => setError(e instanceof Error ? e.message : 'Error al cargar'))
+      .finally(() => setLoading(false));
+  }, []);
+
+  async function marcarTransferido(id: string) {
+    setUpdating(id);
+    try {
+      const updated = await liquidacionRepository.update(id, { estadoPago: 'completado' });
+      setData((prev) => prev.map((l) => l.id === id ? { ...l, estadoPago: updated.estadoPago } : l));
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Error al actualizar');
+    } finally {
+      setUpdating(null);
+    }
+  }
+
+  const totalPendiente = data
     .filter((l) => l.estadoPago === 'pendiente')
-    .reduce((sum, l) => sum + l.comisionPlataforma, 0);
-  const totalPagado = MOCK_LIQUIDACIONES
+    .reduce((sum, l) => sum + Number(l.comisionPlataforma), 0);
+  const totalPagado = data
     .filter((l) => l.estadoPago === 'completado')
-    .reduce((sum, l) => sum + l.comisionPlataforma, 0);
-  const tasaPromedio = MOCK_LIQUIDACIONES.length > 0
-    ? (MOCK_LIQUIDACIONES.reduce((sum, l) => sum + (l.comisionPlataforma / l.montoVentas * 100), 0) / MOCK_LIQUIDACIONES.length).toFixed(1)
+    .reduce((sum, l) => sum + Number(l.comisionPlataforma), 0);
+  const tasaPromedio = data.length > 0
+    ? (data.reduce((sum, l) => sum + (Number(l.comisionPlataforma) / Number(l.montoVentas) * 100), 0) / data.length).toFixed(1)
     : '0.0';
+
+  if (loading) return <div className="p-6 text-muted-foreground">Cargando comisiones...</div>;
+  if (error) return <div className="p-6 text-red-500">Error: {error}</div>;
 
   return (
     <div className="space-y-6">
       <div className="bg-white rounded-xl border border-neutral-200 shadow-sm p-6">
         <h1 className="text-2xl font-bold text-neutral-900 tracking-tight">Comisiones</h1>
         <p className="mt-1.5 text-sm text-muted-foreground leading-relaxed">
-          Gestión de comisiones por agencia.
+          Gestión de comisiones y dispersión de pagos por agencia.
         </p>
       </div>
 
@@ -77,27 +118,41 @@ export default function ComisionesPage() {
               <TableHead>Comisión</TableHead>
               <TableHead>Monto a transferir</TableHead>
               <TableHead>Estado</TableHead>
+              {isSuperAdmin && <TableHead className="w-40">Acción</TableHead>}
             </TableRow>
           </TableHeader>
           <TableBody>
-            {MOCK_LIQUIDACIONES.map((l) => {
-              const agencia = getAgenciaById(l.idAgencia);
-              return (
-                <TableRow key={l.id}>
-                  <TableCell className="font-medium text-neutral-900">{agencia?.razonSocial ?? l.idAgencia}</TableCell>
-                  <TableCell>{l.periodo}</TableCell>
-                  <TableCell>S/ {l.montoVentas.toLocaleString()}</TableCell>
-                  <TableCell>S/ {l.comisionPlataforma.toLocaleString()}</TableCell>
-                  <TableCell>S/ {l.montoATransferir.toLocaleString()}</TableCell>
+            {data.map((l) => (
+              <TableRow key={l.id}>
+                <TableCell className="font-medium text-neutral-900">{l.idAgencia}</TableCell>
+                <TableCell>{l.periodo}</TableCell>
+                <TableCell>S/ {Number(l.montoVentas).toLocaleString()}</TableCell>
+                <TableCell>S/ {Number(l.comisionPlataforma).toLocaleString()}</TableCell>
+                <TableCell>S/ {Number(l.montoATransferir).toLocaleString()}</TableCell>
+                <TableCell>
+                  <Badge variant={ESTADO_VARIANT[l.estadoPago]}>{l.estadoPago}</Badge>
+                </TableCell>
+                {isSuperAdmin && (
                   <TableCell>
-                    <Badge variant={ESTADO_VARIANT[l.estadoPago]}>{l.estadoPago}</Badge>
+                    {l.estadoPago === 'pendiente' && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="text-xs gap-1"
+                        onClick={() => marcarTransferido(l.id)}
+                        disabled={updating === l.id}
+                      >
+                        <CheckCircle className="size-3.5" />
+                        {updating === l.id ? '...' : 'Transferido'}
+                      </Button>
+                    )}
                   </TableCell>
-                </TableRow>
-              );
-            })}
-            {MOCK_LIQUIDACIONES.length === 0 && (
+                )}
+              </TableRow>
+            ))}
+            {data.length === 0 && (
               <TableRow>
-                <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                <TableCell colSpan={isSuperAdmin ? 8 : 6} className="text-center py-8 text-muted-foreground">
                   No hay liquidaciones registradas.
                 </TableCell>
               </TableRow>

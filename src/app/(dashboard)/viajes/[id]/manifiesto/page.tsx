@@ -1,20 +1,13 @@
 'use client';
 
+import { useEffect, useRef, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { FileSpreadsheet, Download, Printer } from 'lucide-react';
 import { Badge } from '@/components/ui/badge/badge';
 import { Button } from '@/components/ui/button/button';
-import {
-  getViajeById,
-  getRutaById,
-  getBusById,
-  getTerminalById,
-  getBoletosByViajeId,
-  getPasajeroById,
-  getAsientoById,
-} from '@/infrastructure/mock/data';
-import { format } from 'date-fns';
-import { es } from 'date-fns/locale';
+import { Skeleton } from '@/components/ui';
+import { viajeRepository, rutaRepository, busRepository, terminalRepository, boletoRepository, pasajeroRepository, asientoRepository } from '@/infrastructure/repositories';
+import type { Viaje, Ruta, Bus, Terminal } from '@/infrastructure/domain/types';
 
 const estadoViajeVariant: Record<string, 'info' | 'warning' | 'success' | 'danger'> = {
   programado: 'info',
@@ -32,43 +25,90 @@ const estadoViajeLabel: Record<string, string> = {
 
 export default function ManifiestoViajePage() {
   const params = useParams<{ id: string }>();
-  const viaje = getViajeById(params.id);
-  const ruta = viaje ? getRutaById(viaje.idRuta) : undefined;
-  const bus = viaje ? getBusById(viaje.idBus) : undefined;
-  const terminalOrigen = ruta ? getTerminalById(ruta.idTerminalOrigen) : undefined;
-  const terminalDestino = ruta ? getTerminalById(ruta.idTerminalDestino) : undefined;
-  const boletos = viaje ? getBoletosByViajeId(viaje.id) : [];
+  const printRef = useRef<HTMLDivElement>(null);
+  const [viaje, setViaje] = useState<Viaje | null>(null);
+  const [ruta, setRuta] = useState<Ruta | null>(null);
+  const [bus, setBus] = useState<Bus | null>(null);
+  const [terminalOrigen, setTerminalOrigen] = useState<Terminal | null>(null);
+  const [terminalDestino, setTerminalDestino] = useState<Terminal | null>(null);
+  const [pasajerosManifiesto, setPasajerosManifiesto] = useState<{ item: number; nombres: string; documento: string; asiento: string; tipoAsiento: string; boleto: string }[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const fechaHoraSalida = viaje ? format(new Date(viaje.fechaHoraSalida), 'dd/MM/yyyy HH:mm', { locale: es }) : '';
-  const fechaHoraLlegada = viaje ? format(new Date(viaje.fechaHoraLlegada), 'dd/MM/yyyy HH:mm', { locale: es }) : '';
+  useEffect(() => {
+    (async () => {
+      try {
+        const v = await viajeRepository.getById(params.id);
+        if (!v) { setLoading(false); return; }
+        setViaje(v);
+        const [r, b, boletos, asientos] = await Promise.all([
+          rutaRepository.getById(v.idRuta),
+          busRepository.getById(v.idBus),
+          boletoRepository.getByViaje(v.id),
+          asientoRepository.listByBus(v.idBus),
+        ]);
+        if (r) setRuta(r);
+        if (b) setBus(b);
+        if (r) {
+          const [tO, tD] = await Promise.all([
+            terminalRepository.getById(r.idTerminalOrigen),
+            terminalRepository.getById(r.idTerminalDestino),
+          ]);
+          if (tO) setTerminalOrigen(tO);
+          if (tD) setTerminalDestino(tD);
+        }
+        const aMap = new Map(asientos.map((a) => [a.id, a]));
+        const pMap = new Map<string, { nombres: string; apellidoPaterno: string; apellidoMaterno: string; numeroDocumento: string }>();
+        await Promise.all(boletos.map(async (boleto) => {
+          try {
+            const p = await pasajeroRepository.getById(boleto.idPasajero);
+            if (p) pMap.set(boleto.idPasajero, p);
+          } catch {}
+        }));
+        setPasajerosManifiesto(boletos.map((boleto, idx) => {
+          const p = pMap.get(boleto.idPasajero);
+          const a = aMap.get(boleto.idAsiento);
+          return {
+            item: idx + 1,
+            nombres: p ? `${p.nombres} ${p.apellidoPaterno} ${p.apellidoMaterno}` : '—',
+            documento: p?.numeroDocumento ?? '—',
+            asiento: a?.numeroAsiento ?? '—',
+            tipoAsiento: a?.tipoServicio ?? '—',
+            boleto: boleto.codigoQr,
+          };
+        }));
+      } catch {} finally {
+        setLoading(false);
+      }
+    })();
+  }, [params.id]);
 
-  const pasajerosManifiesto = boletos.map((b, idx) => {
-    const pasajero = getPasajeroById(b.idPasajero);
-    const asiento = getAsientoById(b.idAsiento);
-    return {
-      item: idx + 1,
-      nombres: pasajero ? `${pasajero.nombres} ${pasajero.apellidoPaterno} ${pasajero.apellidoMaterno}` : '—',
-      documento: pasajero?.numeroDocumento ?? '—',
-      asiento: asiento?.numeroAsiento ?? '—',
-      tipoAsiento: asiento?.tipoServicio ?? '—',
-      boleto: b.codigoQr,
-    };
-  });
+  if (loading) return <div className="p-6 space-y-4">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-12 w-full rounded-lg" />)}</div>;
+
+  const fechaHoraSalida = viaje ? new Date(viaje.fechaHoraSalida).toLocaleString('es-PE') : '';
+  const fechaHoraLlegada = viaje ? new Date(viaje.fechaHoraLlegada).toLocaleString('es-PE') : '';
 
   return (
+    <>
+      <style>{`
+        @media print {
+          body * { visibility: hidden; }
+          #manifiesto-print, #manifiesto-print * { visibility: visible; }
+          #manifiesto-print { position: absolute; left: 0; top: 0; width: 100%; }
+        }
+      `}</style>
     <div className="space-y-6">
-      <div className="bg-white rounded-xl border border-neutral-200 shadow-sm p-6">
+      <div id="manifiesto-print" className="bg-white rounded-xl border border-neutral-200 shadow-sm p-6">
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-2">
             <FileSpreadsheet className="size-5 text-red-600" />
             <h2 className="text-base font-semibold text-neutral-900">Manifiesto de Pasajeros</h2>
           </div>
           <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" disabled>
+            <Button variant="outline" size="sm" onClick={() => window.print()}>
               <Printer className="size-4 mr-1.5" />
               Imprimir
             </Button>
-            <Button variant="outline" size="sm" disabled>
+            <Button variant="outline" size="sm" onClick={() => window.print()}>
               <Download className="size-4 mr-1.5" />
               Exportar PDF
             </Button>
@@ -79,8 +119,8 @@ export default function ManifiestoViajePage() {
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-8 gap-y-3 p-5 bg-neutral-50/50 border-b border-neutral-200 text-sm">
             <div>
               <p className="text-xs text-neutral-400 uppercase tracking-wider mb-0.5">Empresa</p>
-              <p className="font-semibold text-neutral-900">Bustoke S.A.C. (*)</p>
-              <p className="text-xs text-neutral-500">RUC: 20609876543 (*)</p>
+              <p className="font-semibold text-neutral-900">Bustoke S.A.C.</p>
+              <p className="text-xs text-neutral-500">RUC: 20609876543</p>
             </div>
             <div>
               <p className="text-xs text-neutral-400 uppercase tracking-wider mb-0.5">Ruta</p>
@@ -158,13 +198,10 @@ export default function ManifiestoViajePage() {
               <span className="mx-2 text-neutral-300">|</span>
               Llegada estimada: <span className="font-medium text-neutral-900">{fechaHoraLlegada}</span>
             </div>
-            <div className="flex items-center gap-3">
-              <Badge variant="info">preparado para API</Badge>
-              <span className="text-[10px] text-neutral-300">(*) datos mock — serán reemplazados por datos de la empresa desde DB</span>
-            </div>
           </div>
         </div>
       </div>
     </div>
+    </>
   );
 }

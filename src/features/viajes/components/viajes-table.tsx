@@ -1,19 +1,44 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useViajes } from '@/features/drilldown/application/use-entity-data';
 import { Input, Button, DataTable, DataTableEmpty, Skeleton } from '@/components/ui';
-import { SearchIcon, XIcon, Eye } from 'lucide-react';
-import { viajesColumns } from './viajes-columns';
-import type { Viaje } from '@/infrastructure/domain/types';
+import { SearchIcon, XIcon, Eye, PencilIcon, Trash2Icon } from 'lucide-react';
+import { useViajesColumns } from './viajes-columns';
+import { rutaRepository, busRepository, terminalRepository } from '@/infrastructure/repositories';
+import type { Viaje, Ruta, Bus, Terminal } from '@/infrastructure/domain/types';
 
-export function ViajesTable() {
+type Props = {
+  onEdit: (viaje: Viaje) => void;
+  onDelete: (viaje: Viaje) => void;
+};
+
+export function ViajesTable({ onEdit, onDelete }: Props) {
   const [search, setSearch] = useState('');
   const { data, isLoading, error } = useViajes();
+  const [rutas, setRutas] = useState<Ruta[]>([]);
+  const [buses, setBuses] = useState<Bus[]>([]);
+  const [terminales, setTerminales] = useState<Terminal[]>([]);
+  const [lookupLoaded, setLookupLoaded] = useState(false);
+
+  useEffect(() => {
+    Promise.all([
+      rutaRepository.list(),
+      busRepository.list(),
+      terminalRepository.list(),
+    ]).then(([r, b, t]) => {
+      setRutas(r);
+      setBuses(b);
+      setTerminales(t);
+      setLookupLoaded(true);
+    }).catch(() => setLookupLoaded(true));
+  }, []);
+
+  const viajesColumns = useViajesColumns(rutas, buses, terminales);
 
   const filtered = useMemo(() => {
-    if (!search) return data;
+    if (!search || !data) return data;
     const l = search.toLowerCase();
     return data.filter((v) => v.fechaHoraSalida.includes(l) || v.idRuta.toLowerCase().includes(l) || v.estado.includes(l));
   }, [search, data]);
@@ -30,10 +55,16 @@ export function ViajesTable() {
               <Eye className="size-4" />
             </Button>
           </Link>
+          <Button variant="ghost" size="icon" className="size-8" title="Editar" onClick={() => onEdit(row.original)}>
+            <PencilIcon className="size-4" />
+          </Button>
+          <Button variant="ghost" size="icon" className="size-8 text-red-600 hover:text-red-700 hover:bg-red-50" title="Eliminar" onClick={() => onDelete(row.original)}>
+            <Trash2Icon className="size-4" />
+          </Button>
         </div>
       ),
     },
-  ], []);
+  ], [viajesColumns, onEdit, onDelete]);
 
   if (isLoading) {
     return (

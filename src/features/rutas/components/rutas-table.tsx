@@ -4,18 +4,23 @@ import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRutas } from '@/features/drilldown/application/use-entity-data';
 import { Input, Button, DataTable, DataTableEmpty, Skeleton } from '@/components/ui';
-import { SearchIcon, XIcon, Eye } from 'lucide-react';
+import { SearchIcon, XIcon, Eye, Pencil, Trash2 } from 'lucide-react';
 import { rutasColumns } from './rutas-columns';
 import type { Ruta } from '@/infrastructure/domain/types';
 
-export function RutasTable() {
+interface Props {
+  onEdit: (ruta: Ruta) => void;
+  onDelete: (id: string) => void;
+}
+
+export function RutasTable({ onEdit, onDelete }: Props) {
   const [search, setSearch] = useState('');
   const { data, isLoading, error } = useRutas();
 
   const filtered = useMemo(() => {
     if (!search) return data;
     const l = search.toLowerCase();
-    return data.filter((r) => r.idTerminalOrigen.toLowerCase().includes(l) || r.idTerminalDestino.toLowerCase().includes(l));
+    return data.filter((r) => (r.terminalOrigenNombre ?? r.idTerminalOrigen).toLowerCase().includes(l) || (r.terminalDestinoNombre ?? r.idTerminalDestino).toLowerCase().includes(l));
   }, [search, data]);
 
   const columnsWithActions = useMemo(() => [
@@ -30,10 +35,16 @@ export function RutasTable() {
               <Eye className="size-4" />
             </Button>
           </Link>
+          <Button variant="ghost" size="icon" className="size-8" title="Editar" onClick={() => onEdit(row.original)}>
+            <Pencil className="size-4" />
+          </Button>
+          <Button variant="ghost" size="icon" className="size-8" title="Eliminar" onClick={() => onDelete(row.original.id)}>
+            <Trash2 className="size-4 text-red-500" />
+          </Button>
         </div>
       ),
     },
-  ], []);
+  ], [onEdit, onDelete]);
 
   if (isLoading) {
     return (

@@ -87,6 +87,20 @@ export type Bus = {
   cantidadPisos: number;
 };
 
+// --- Choferes ---
+
+export type Chofer = {
+  id: string;
+  idAgencia: string;
+  idTipoDocumento: string;
+  numeroDocumento: string;
+  nombres: string;
+  apellidoPaterno: string;
+  apellidoMaterno: string;
+  activo: boolean;
+  fechaRegistro: string;
+};
+
 // --- Asientos ---
 
 export type Asiento = {
@@ -109,6 +123,8 @@ export type Ruta = {
   idTerminalOrigen: string;
   idTerminalDestino: string;
   tarifaBase: number;
+  terminalOrigenNombre?: string;
+  terminalDestinoNombre?: string;
 };
 
 // --- Tarifas por Ruta ---
@@ -263,6 +279,20 @@ export type ApiKey = {
   activo: boolean;
 };
 
+// --- Notificaciones ---
+
+export type Notificacion = {
+  id: string;
+  idUsuario: string;
+  tipo: string;
+  titulo: string;
+  mensaje: string;
+  referenciaTipo: string | null;
+  referenciaId: string | null;
+  leida: boolean;
+  fechaCreacion: string;
+};
+
 // --- Tickets de Soporte ---
 
 export type TicketSoporte = {
@@ -272,6 +302,16 @@ export type TicketSoporte = {
   descripcion: string;
   estado: EstadoTicketSoporte;
   fechaCreacion: string;
+};
+
+export type HistorialCambioSoporte = {
+  id: string;
+  idTicket: string;
+  campo: string;
+  valorAnterior: string | null;
+  valorNuevo: string;
+  idUsuarioModifica: string | null;
+  fechaCambio: string;
 };
 
 // --- Manifiestos SUTRAN ---

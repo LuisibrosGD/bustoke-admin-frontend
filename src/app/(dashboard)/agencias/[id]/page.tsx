@@ -1,11 +1,12 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
-import { Badge } from '@/components/ui/badge/badge';
-import { Button } from '@/components/ui/button/button';
+import { Badge, Button } from '@/components/ui';
 import { ArrowLeft, Building2, Banknote, Bus, Route, CalendarCheck, Edit } from 'lucide-react';
-import { getAgenciaById, getBusesByAgenciaId, getRutasByAgenciaId, getViajesByAgenciaId } from '@/infrastructure/mock/data';
+import { agenciaRepository, busRepository, rutaRepository, viajeRepository } from '@/infrastructure/repositories';
+import type { Agencia, Bus as BusType, Ruta, Viaje } from '@/infrastructure/domain/types';
 
 const estadoVariant: Record<string, 'success' | 'danger'> = {
   activa: 'success',
@@ -23,18 +24,37 @@ function InfoRow({ label, value }: { label: string; value: string | React.ReactN
 
 export default function AgenciaDetailPage() {
   const params = useParams<{ id: string }>();
-  const agencia = getAgenciaById(params.id);
-  const buses = getBusesByAgenciaId(params.id);
-  const rutas = getRutasByAgenciaId(params.id);
-  const viajes = getViajesByAgenciaId(params.id);
+  const [agencia, setAgencia] = useState<Agencia | null>(null);
+  const [buses, setBuses] = useState<BusType[]>([]);
+  const [rutas, setRutas] = useState<Ruta[]>([]);
+  const [viajes, setViajes] = useState<Viaje[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  if (!agencia) {
-    return (
-      <div className="p-6 text-center text-muted-foreground">
-        Agencia no encontrada
-      </div>
-    );
-  }
+  useEffect(() => {
+    (async () => {
+      try {
+        const a = await agenciaRepository.getById(params.id);
+        if (!a) { setLoading(false); return; }
+        setAgencia(a);
+
+        const [bb, rr, vv] = await Promise.all([
+          busRepository.list({ id_agencia: a.id }),
+          rutaRepository.list({ id_agencia: a.id }),
+          viajeRepository.list({ id_agencia: a.id }),
+        ]);
+        setBuses(bb);
+        setRutas(rr);
+        setViajes(vv);
+      } catch (e) {
+        console.error(e);
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [params.id]);
+
+  if (loading) return <div className="p-6 text-muted-foreground">Cargando agencia...</div>;
+  if (!agencia) return <div className="p-6 text-center text-muted-foreground">Agencia no encontrada</div>;
 
   return (
     <div className="space-y-6">

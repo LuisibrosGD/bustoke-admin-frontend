@@ -10,10 +10,13 @@ const ACCESS_TOKEN_REFRESH_BUFFER_MS = 60 * 1000;
 
 type BackendAuthResponse = {
   accessToken: string;
-  accessTokenExpiresAt: string;
+  accessTokenExpiresAt?: string;
   refreshToken: string;
-  refreshTokenExpiresAt: string;
-  sessionId: string;
+  refreshTokenExpiresAt?: string;
+  sessionId?: string;
+  rol?: string;
+  idUsuario?: number;
+  idAgencia?: number;
   user?: {
     id?: string;
     email?: string;
@@ -27,7 +30,8 @@ type DecodedAccessToken = {
   sub: string;
   email: string;
   name?: string;
-  role: string;
+  rol?: string;
+  role?: string;
   avatarUrl?: string;
   exp?: number;
 };
@@ -48,7 +52,7 @@ function mapAuthResponseToToken(token: JWT, data: BackendAuthResponse): JWT {
     id: data.user?.id ?? decoded?.sub,
     email: data.user?.email ?? decoded?.email,
     name: data.user?.name ?? decoded?.name,
-    role: data.user?.role ?? decoded?.role,
+    role: data.user?.role ?? data.rol ?? decoded?.rol ?? decoded?.role,
     avatarUrl: data.user?.avatarUrl ?? decoded?.avatarUrl,
     accessToken: data.accessToken,
     accessTokenExpiresAt: getAccessTokenExpiresAt(data),
@@ -65,7 +69,7 @@ async function refreshAccessToken(token: JWT): Promise<JWT> {
       throw new Error('Missing refresh token');
     }
 
-    const response = await fetch(`${ENV_URL_API}/api${authEndpoints.refresh}`, {
+    const response = await fetch(`${ENV_URL_API}${authEndpoints.refresh}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ refreshToken: token.refreshToken }),
@@ -104,7 +108,7 @@ export const authOptions: NextAuthOptions = {
 
         try {
           const response = await fetch(
-            `${ENV_URL_API}/api${authEndpoints.login}`,
+            `${ENV_URL_API}${authEndpoints.login}`,
             {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -132,7 +136,7 @@ export const authOptions: NextAuthOptions = {
             email: data.user?.email ?? payload.email,
             id: data.user?.id ?? payload.sub,
             name: data.user?.name ?? payload.name,
-            role: data.user?.role ?? payload.role,
+            role: data.user?.role ?? data.rol ?? payload.rol ?? payload.role,
             avatarUrl: data.user?.avatarUrl ?? payload.avatarUrl,
           };
         } catch (error: unknown) {

@@ -1,21 +1,51 @@
-import { MockRepository } from './mock-repository';
-import { MOCK_VIAJES, MOCK_RUTAS } from '@/infrastructure/mock/data';
 import type { Viaje } from '@/infrastructure/domain/types';
 
-export class ViajeRepository extends MockRepository<Viaje> {
-  constructor() {
-    super(MOCK_VIAJES);
+const API = '/api';
+
+async function request<T>(path: string, options?: RequestInit): Promise<T> {
+  const res = await fetch(`${API}${path}`, {
+    headers: { 'Content-Type': 'application/json' },
+    ...options,
+  });
+  if (!res.ok) throw new Error(`API error: ${res.status} ${res.statusText}`);
+  return res.json();
+}
+
+export class ViajeRepository {
+  async list(params?: Record<string, string>): Promise<Viaje[]> {
+    const query = params ? '?' + new URLSearchParams(params).toString() : '';
+    return request<Viaje[]>(`/admin/viajes${query}`);
+  }
+
+  async getById(id: string): Promise<Viaje | null> {
+    return request<Viaje>(`/admin/viajes/${id}`);
   }
 
   async findByRuta(rutaId: string): Promise<Viaje[]> {
-    await new Promise(r => setTimeout(r, 200));
-    return this.items.filter(item => item.idRuta === rutaId);
+    return this.list({ idRuta: rutaId });
   }
 
   async findByAgencia(agenciaId: string): Promise<Viaje[]> {
-    await new Promise(r => setTimeout(r, 200));
-    const rutaIds = MOCK_RUTAS.filter(r => r.idAgencia === agenciaId).map(r => r.id);
-    return this.items.filter(item => rutaIds.includes(item.idRuta));
+    return this.list({ idAgencia: agenciaId });
+  }
+
+  async create(data: Partial<Viaje>): Promise<Viaje> {
+    return request<Viaje>('/admin/viajes', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async update(id: string, data: Partial<Viaje>): Promise<Viaje> {
+    return request<Viaje>(`/admin/viajes/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async delete(id: string): Promise<boolean> {
+    await request<void>(`/admin/viajes/${id}`, { method: 'DELETE' });
+    return true;
   }
 }
 

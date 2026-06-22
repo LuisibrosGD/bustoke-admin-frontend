@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import { useSession } from 'next-auth/react';
 import Link from 'next/link';
 import { useAgencias } from '../application/use-entity-data';
 import {
@@ -10,8 +11,16 @@ import {
   Badge,
   Button,
   Skeleton,
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+  Label,
 } from '@/components/ui';
-import { SearchIcon, XIcon, ArrowRight, Pencil, Eye } from 'lucide-react';
+import { SearchIcon, XIcon, ArrowRight, Pencil, Eye, Plus } from 'lucide-react';
+import { agenciaRepository } from '@/infrastructure/repositories';
 import type { Agencia } from '@/infrastructure/domain/types';
 import type { ColumnDef } from '@tanstack/react-table';
 
@@ -21,8 +30,35 @@ const estadoVariant: Record<string, 'success' | 'danger' | 'warning' | 'neutral'
 };
 
 export function AgenciaTableLevel() {
+  const { data: session } = useSession();
+  const isSuperadmin = (() => {
+    try {
+      return JSON.parse(atob((session?.user?.accessToken ?? '').split('.')[1])).rol === 'superadmin';
+    } catch { return false; }
+  })();
+
   const [search, setSearch] = useState('');
-  const { data, isLoading, error } = useAgencias();
+  const { data, isLoading, error, refetch } = useAgencias();
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [ruc, setRuc] = useState('');
+  const [razonSocial, setRazonSocial] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  const handleCreate = async () => {
+    if (!ruc.trim() || !razonSocial.trim()) return;
+    setSubmitting(true);
+    try {
+      await agenciaRepository.create({ ruc: ruc.trim(), razonSocial: razonSocial.trim() });
+      setDialogOpen(false);
+      setRuc('');
+      setRazonSocial('');
+      refetch();
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   const filtered = useMemo(() => {
     if (!search) return data;
@@ -129,6 +165,12 @@ export function AgenciaTableLevel() {
               <XIcon className="size-4 mr-1" /> Limpiar
             </Button>
           )}
+          {isSuperadmin && (
+            <Button onClick={() => setDialogOpen(true)}>
+              <Plus className="size-4 mr-1" />
+              Nueva agencia
+            </Button>
+          )}
         </div>
         <DataTable
           columns={columns}
@@ -142,6 +184,31 @@ export function AgenciaTableLevel() {
         />
       </div>
 
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Nueva agencia</DialogTitle>
+            <DialogDescription>Registra una nueva empresa de transporte.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-1">
+              <Label>RUC (11 dígitos)</Label>
+              <Input value={ruc} onChange={(e) => setRuc(e.target.value)} placeholder="12345678901" maxLength={11} />
+              {ruc.length > 0 && ruc.length !== 11 && <p className="text-xs text-red-500">El RUC debe tener 11 dígitos</p>}
+            </div>
+            <div className="space-y-1">
+              <Label>Razón Social</Label>
+              <Input value={razonSocial} onChange={(e) => setRazonSocial(e.target.value)} placeholder="Empresa de Transportes S.A.C." />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancelar</Button>
+            <Button onClick={handleCreate} disabled={submitting || !ruc.trim() || !razonSocial.trim() || ruc.trim().length !== 11}>
+              {submitting ? 'Creando...' : 'Crear agencia'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
