@@ -4,11 +4,15 @@ import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useFlota } from '@/features/drilldown/application/use-entity-data';
 import { Input, Button, DataTable, DataTableEmpty, Skeleton } from '@/components/ui';
-import { SearchIcon, XIcon, Eye, Pencil } from 'lucide-react';
+import { SearchIcon, XIcon, Eye, Pencil, Trash2 } from 'lucide-react';
 import { flotaColumns } from './flota-columns';
 import type { Bus } from '@/infrastructure/domain/types';
 
-export function FlotaTable() {
+interface Props {
+  onDelete: (id: string) => void;
+}
+
+export function FlotaTable({ onDelete }: Props) {
   const [search, setSearch] = useState('');
   const { data, isLoading, error } = useFlota();
 
@@ -37,10 +41,13 @@ export function FlotaTable() {
               <Pencil className="size-4" />
             </Button>
           </Link>
+          <Button variant="ghost" size="icon" className="size-8" title="Eliminar" onClick={() => onDelete(row.original.id)}>
+            <Trash2 className="size-4 text-red-500" />
+          </Button>
         </div>
       ),
     },
-  ], []);
+  ], [onDelete]);
 
   if (isLoading) {
     return (

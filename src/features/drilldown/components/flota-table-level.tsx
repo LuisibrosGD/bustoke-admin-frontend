@@ -22,10 +22,10 @@ export function FlotaTableLevel({
   agencyLabel: string;
 }) {
   const [search, setSearch] = useState('');
-  const { data, isLoading, error } = useFlota({ idAgencia: agencyId });
+  const { data, isLoading, error } = useFlota({ id_agencia: agencyId });
 
   const filtered = useMemo(() => {
-    const byAgency = data.filter((b) => b.idAgencia === agencyId);
+    const byAgency = data.filter((b) => String(b.idAgencia) === agencyId);
     if (!search) return byAgency;
     const lower = search.toLowerCase();
     return byAgency.filter(

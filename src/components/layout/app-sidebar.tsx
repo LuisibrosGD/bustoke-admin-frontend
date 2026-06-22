@@ -2,6 +2,7 @@
 
 import { useMemo } from 'react';
 import Link from 'next/link';
+import { useSession } from 'next-auth/react';
 import {
   Sidebar,
   SidebarContent,
@@ -20,7 +21,7 @@ import { NAV_ITEMS } from '@/lib/constants/paths';
 import NavMain, { type NavItem } from './nav-main';
 import { LogOut } from 'lucide-react';
 
-const sectionMap: { label: string; keys: string[] }[] = [
+const ALL_SECTIONS: { label: string; keys: string[] }[] = [
   { label: '', keys: ['Inicio'] },
   { label: 'Gestión', keys: ['Agencias', 'Terminales', 'Flota', 'Rutas', 'Viajes'] },
   { label: 'Ventas', keys: ['Boletos', 'Pasajeros'] },
@@ -34,6 +35,25 @@ function filterItems(allItems: NavItem[], keys: string[]): NavItem[] {
 }
 
 export function AppSidebar() {
+  const { data: session } = useSession();
+  const role = session?.user?.role ?? (() => {
+    try {
+      const token = session?.user?.accessToken;
+      if (!token) return undefined;
+      const b64 = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+      return JSON.parse(atob(b64)).rol;
+    } catch { return undefined; }
+  })();
+  const isAdminAgencia = role === 'admin_agencia';
+
+  const sectionMap = useMemo(() => {
+    if (!isAdminAgencia) return ALL_SECTIONS;
+    return ALL_SECTIONS.map((section) => ({
+      ...section,
+      keys: section.keys.filter((k) => k !== 'Agencias'),
+    })).filter((s) => s.keys.length > 0);
+  }, [isAdminAgencia]);
+
   const allItems = useMemo(() => NAV_ITEMS as NavItem[], []);
   const { open } = useSidebar();
 

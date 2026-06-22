@@ -1,19 +1,13 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { useParams } from 'next/navigation';
 import { ClipboardCheck, SearchIcon, QrCode, BadgeCheck, XCircle, UserRoundX, ArrowUpDown } from 'lucide-react';
 import { Badge } from '@/components/ui/badge/badge';
 import { Input } from '@/components/ui/input/input';
 import { Button } from '@/components/ui/button/button';
-import {
-  getViajeById,
-  getRutaById,
-  getBoletosByViajeId,
-  getPasajeroById,
-  getAsientoById,
-  getTerminalById,
-} from '@/infrastructure/mock/data';
+import { viajeRepository, rutaRepository, boletoRepository, pasajeroRepository, asientoRepository, terminalRepository } from '@/infrastructure/repositories';
+import type { Viaje, Boleto } from '@/infrastructure/domain/types';
 
 type CheckInStatus = 'pendiente' | 'abordado' | 'no_show';
 
@@ -47,28 +41,56 @@ const filterOptions: { label: string; value: CheckInStatus | 'todos' }[] = [
 
 export default function CheckinViajePage() {
   const params = useParams<{ id: string }>();
-  const viaje = getViajeById(params.id);
-  const ruta = viaje ? getRutaById(viaje.idRuta) : undefined;
-  const terminalOrigen = ruta ? getTerminalById(ruta.idTerminalOrigen) : undefined;
-  const terminalDestino = ruta ? getTerminalById(ruta.idTerminalDestino) : undefined;
-
+  const [viaje, setViaje] = useState<Viaje | null>(null);
+  const [rutaLabel, setRutaLabel] = useState('');
+  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<CheckInStatus | 'todos'>('todos');
-  const [rows, setRows] = useState<CheckInRow[]>(() => {
-    const boletos = viaje ? getBoletosByViajeId(viaje.id) : [];
-    return boletos.map((b) => {
-      const pasajero = getPasajeroById(b.idPasajero);
-      const asiento = getAsientoById(b.idAsiento);
-      return {
-        id: b.id,
-        pasajero: pasajero ? `${pasajero.nombres} ${pasajero.apellidoPaterno} ${pasajero.apellidoMaterno}` : '—',
-        documento: pasajero?.numeroDocumento ?? '—',
-        asientoNumero: asiento?.numeroAsiento ?? '—',
-        tipoAsiento: asiento?.tipoServicio ?? '—',
-        estado: 'pendiente' as CheckInStatus,
-      };
-    });
-  });
+  const [rows, setRows] = useState<CheckInRow[]>([]);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const v = await viajeRepository.getById(params.id);
+        if (!v) { setLoading(false); return; }
+        setViaje(v);
+        const [r, boletos, asientos] = await Promise.all([
+          rutaRepository.getById(v.idRuta),
+          boletoRepository.getByViaje(v.id),
+          asientoRepository.listByBus(v.idBus),
+        ]);
+        if (r) {
+          const [tO, tD] = await Promise.all([
+            terminalRepository.getById(r.idTerminalOrigen),
+            terminalRepository.getById(r.idTerminalDestino),
+          ]);
+          setRutaLabel(`${tO?.nombre ?? '?'} → ${tD?.nombre ?? '?'}`);
+        }
+        const aMap = new Map(asientos.map((a) => [a.id, a]));
+        const pMap = new Map<string, { nombres: string; apellidoPaterno: string; apellidoMaterno: string; numeroDocumento: string }>();
+        await Promise.all(boletos.map(async (b) => {
+          try {
+            const p = await pasajeroRepository.getById(b.idPasajero);
+            if (p) pMap.set(b.idPasajero, p);
+          } catch {}
+        }));
+        setRows(boletos.map((b) => {
+          const p = pMap.get(b.idPasajero);
+          const a = aMap.get(b.idAsiento);
+          return {
+            id: b.id,
+            pasajero: p ? `${p.nombres} ${p.apellidoPaterno} ${p.apellidoMaterno}` : '—',
+            documento: p?.numeroDocumento ?? '—',
+            asientoNumero: a?.numeroAsiento ?? '—',
+            tipoAsiento: a?.tipoServicio ?? '—',
+            estado: 'pendiente' as CheckInStatus,
+          };
+        }));
+      } catch {} finally {
+        setLoading(false);
+      }
+    })();
+  }, [params.id]);
 
   const filtered = useMemo(() => {
     let result = rows;
@@ -113,6 +135,8 @@ export default function CheckinViajePage() {
     );
   }
 
+  if (loading) return <div className="p-6 text-muted-foreground">Cargando...</div>;
+
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
@@ -140,9 +164,9 @@ export default function CheckinViajePage() {
             <div className="flex items-center gap-2">
               <ClipboardCheck className="size-5 text-purple-600" />
               <h2 className="text-base font-semibold text-neutral-900">Control de Abordaje</h2>
-              {ruta && terminalOrigen && terminalDestino && (
+              {rutaLabel && (
                 <span className="text-sm text-neutral-500 ml-2 hidden sm:inline">
-                  {terminalOrigen.nombre} → {terminalDestino.nombre}
+                  {rutaLabel}
                 </span>
               )}
             </div>

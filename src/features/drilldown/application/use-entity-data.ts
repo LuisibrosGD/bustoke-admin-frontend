@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { useSession } from 'next-auth/react';
 import { api } from '../infrastructure/api';
 import type { Agencia, Bus, Ruta, Viaje } from '@/infrastructure/domain/types';
 
@@ -12,10 +13,12 @@ interface UseEntityResult<T> {
 }
 
 function useEntity<T>(
-  fetcher: (params?: Record<string, string>) => Promise<T[]>,
+  fetcher: (token: string, params?: Record<string, string>) => Promise<T[]>,
   params?: Record<string, string>,
   extraDeps: unknown[] = []
 ): UseEntityResult<T> {
+  const { data: session } = useSession();
+  const accessToken = session?.user?.accessToken;
   const [data, setData] = useState<T[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -23,10 +26,11 @@ function useEntity<T>(
   paramsRef.current = params;
 
   const fetch = useCallback(async () => {
+    if (!accessToken) return;
     setIsLoading(true);
     setError(null);
     try {
-      const result = await fetcher(paramsRef.current);
+      const result = await fetcher(accessToken, paramsRef.current);
       setData(result);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al cargar datos');
@@ -34,7 +38,7 @@ function useEntity<T>(
       setIsLoading(false);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, extraDeps);
+  }, [accessToken, ...extraDeps]);
 
   useEffect(() => {
     fetch();

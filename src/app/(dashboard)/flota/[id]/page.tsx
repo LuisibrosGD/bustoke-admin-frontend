@@ -1,11 +1,12 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
-import { Badge } from '@/components/ui/badge/badge';
-import { Button } from '@/components/ui/button/button';
+import { Badge, Button } from '@/components/ui';
 import { ArrowLeft, Edit, Bus, Building2, CalendarDays } from 'lucide-react';
-import { getBusById, getAgenciaById, MOCK_VIAJES, getRutaById, getTerminalById } from '@/infrastructure/mock/data';
+import { busRepository, agenciaRepository, viajeRepository, rutaRepository, terminalRepository } from '@/infrastructure/repositories';
+import type { Viaje, Bus as BusType, Agencia, Ruta, Terminal } from '@/infrastructure/domain/types';
 
 function InfoRow({ label, value }: { label: string; value: string | React.ReactNode }) {
   return (
@@ -18,31 +19,56 @@ function InfoRow({ label, value }: { label: string; value: string | React.ReactN
 
 export default function BusDetailPage() {
   const params = useParams<{ id: string }>();
-  const bus = getBusById(params.id);
+  const [bus, setBus] = useState<BusType | null>(null);
+  const [agencia, setAgencia] = useState<Agencia | null>(null);
+  const [viajes, setViajes] = useState<Viaje[]>([]);
+  const [rutas, setRutas] = useState<Ruta[]>([]);
+  const [terminales, setTerminales] = useState<Terminal[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  if (!bus) {
-    return (
-      <div className="p-6 text-center text-muted-foreground">
-        Bus no encontrado
-      </div>
-    );
-  }
+  useEffect(() => {
+    (async () => {
+      try {
+        const b = await busRepository.getById(params.id);
+        if (!b) { setLoading(false); return; }
+        setBus(b);
 
-  const agencia = getAgenciaById(bus.idAgencia);
-  const ultimosViajes = MOCK_VIAJES
-    .filter((v) => v.idBus === bus.id)
-    .slice(-5)
-    .reverse();
+        const [ag, vv] = await Promise.all([
+          agenciaRepository.getById(b.idAgencia),
+          viajeRepository.list({ id_bus: b.id }),
+        ]);
+        setAgencia(ag);
+        setViajes(vv);
+
+        const rutaIds = [...new Set(vv.map((v) => v.idRuta))];
+        if (rutaIds.length > 0) {
+          const [rt, tt] = await Promise.all([
+            rutaRepository.list(),
+            terminalRepository.list(),
+          ]);
+          setRutas(rt);
+          setTerminales(tt);
+        }
+      } catch (e) {
+        console.error(e);
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [params.id]);
 
   function rutaLabel(idRuta: string): string {
-    const r = getRutaById(idRuta);
+    const r = rutas.find((x) => x.id === idRuta);
     if (!r) return idRuta;
-    const o = getTerminalById(r.idTerminalOrigen);
-    const d = getTerminalById(r.idTerminalDestino);
+    const o = terminales.find((t) => t.id === r.idTerminalOrigen);
+    const d = terminales.find((t) => t.id === r.idTerminalDestino);
     const oName = o?.nombre?.split(' - ')[0]?.split(' de ').pop() || o?.nombre || r.idTerminalOrigen;
     const dName = d?.nombre?.split(' - ')[0]?.split(' de ').pop() || d?.nombre || r.idTerminalDestino;
     return `${oName} → ${dName}`;
   }
+
+  if (loading) return <div className="p-6 text-muted-foreground">Cargando bus...</div>;
+  if (!bus) return <div className="p-6 text-center text-muted-foreground">Bus no encontrado</div>;
 
   return (
     <div className="space-y-6">
@@ -90,9 +116,7 @@ export default function BusDetailPage() {
                   <Building2 className="size-3.5 text-neutral-400" />
                   {agencia.razonSocial}
                 </span>
-              ) : (
-                '—'
-              )
+              ) : '—'
             }
           />
         </div>
@@ -115,7 +139,7 @@ export default function BusDetailPage() {
               </tr>
             </thead>
             <tbody>
-              {ultimosViajes.map((viaje) => (
+              {viajes.slice(-5).reverse().map((viaje) => (
                 <tr key={viaje.id} className="border-b border-neutral-100 last:border-0 hover:bg-neutral-50/50 transition-colors">
                   <td className="px-6 py-3 text-neutral-900">
                     {new Date(viaje.fechaHoraSalida).toLocaleDateString('es-PE')}
@@ -132,7 +156,7 @@ export default function BusDetailPage() {
                   </td>
                 </tr>
               ))}
-              {ultimosViajes.length === 0 && (
+              {viajes.length === 0 && (
                 <tr>
                   <td colSpan={3} className="px-6 py-8 text-center text-muted-foreground">
                     No hay viajes registrados para este bus

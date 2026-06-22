@@ -1,9 +1,12 @@
 'use client';
 
 import { useParams } from 'next/navigation';
-import { Armchair, Bus, Sofa, Crown } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Armchair, Bus, Sofa, Crown, Lock, Unlock } from 'lucide-react';
 import { Badge } from '@/components/ui/badge/badge';
-import { getViajeById, getBusById, getAsientosByBusId, getBoletosByViajeId } from '@/infrastructure/mock/data';
+import { Button } from '@/components/ui/button/button';
+import { getViajeById, getBusById, getBoletosByViajeId } from '@/infrastructure/mock/data';
+import { asientoRepository } from '@/infrastructure/repositories';
 import type { Asiento } from '@/infrastructure/domain/types';
 
 const tipoServicioIcon: Record<string, typeof Armchair> = {
@@ -34,34 +37,75 @@ function getAsientoEstado(asiento: Asiento, asientosOcupados: Set<string>): stri
   return 'disponible';
 }
 
-function SeatCard({ asiento, row, col, asientosOcupados }: { asiento: Asiento; row: number; col: number; asientosOcupados: Set<string> }) {
+function SeatCard({ asiento, row, col, asientosOcupados, onToggle }: { asiento: Asiento; row: number; col: number; asientosOcupados: Set<string>; onToggle: (asiento: Asiento) => void }) {
   const estado = getAsientoEstado(asiento, asientosOcupados);
   const Icon = tipoServicioIcon[asiento.tipoServicio] ?? Armchair;
+  const bloqueado = estado === 'mantenimiento';
+
   return (
-    <div
-      data-seat-id={asiento.id}
-      data-row={row}
-      data-col={col}
-      data-piso={asiento.piso}
-      data-tipo-servicio={asiento.tipoServicio}
-      data-estado={estado}
-      className={`flex flex-col items-center justify-center gap-1 size-14 rounded-xl border text-xs font-medium transition-colors cursor-pointer ${estadoStyle[estado]}`}
-      title={`${asiento.numeroAsiento} — ${tipoServicioLabel[asiento.tipoServicio]} — ${estadoLabel[estado]}`}
-    >
-      <Icon className="size-5" />
-      <span className="leading-none">{asiento.numeroAsiento}</span>
+    <div className="flex flex-col items-center gap-1">
+      <div
+        data-seat-id={asiento.id}
+        data-row={row}
+        data-col={col}
+        data-piso={asiento.piso}
+        data-tipo-servicio={asiento.tipoServicio}
+        data-estado={estado}
+        className={`flex flex-col items-center justify-center gap-1 size-14 rounded-xl border text-xs font-medium transition-colors cursor-pointer ${estadoStyle[estado]} relative group`}
+        title={`${asiento.numeroAsiento} — ${tipoServicioLabel[asiento.tipoServicio]} — ${estadoLabel[estado]}`}
+        onClick={() => onToggle(asiento)}
+      >
+        <Icon className="size-5" />
+        <span className="leading-none">{asiento.numeroAsiento}</span>
+        {estado !== 'ocupado' && (
+          <div className="absolute inset-0 flex items-center justify-center bg-black/40 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity">
+            {bloqueado ? <Unlock className="size-5 text-white" /> : <Lock className="size-5 text-white" />}
+          </div>
+        )}
+      </div>
+      {estado !== 'ocupado' && (
+        <button
+          className="text-[10px] text-neutral-400 hover:text-neutral-700 transition-colors"
+          onClick={() => onToggle(asiento)}
+        >
+          {bloqueado ? 'Desbloquear' : 'Bloquear'}
+        </button>
+      )}
     </div>
   );
 }
 
 export default function AsientosViajePage() {
   const params = useParams<{ id: string }>();
+  const [asientos, setAsientos] = useState<Asiento[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
   const viaje = getViajeById(params.id);
   const bus = viaje ? getBusById(viaje.idBus) : undefined;
-  const asientos = bus ? getAsientosByBusId(bus.id) : [];
-
   const boletos = viaje ? getBoletosByViajeId(viaje.id) : [];
   const asientosOcupados = new Set(boletos.map(b => b.idAsiento));
+
+  useEffect(() => {
+    if (!bus) {
+      setLoading(false);
+      return;
+    }
+    asientoRepository.listByBus(bus.id)
+      .then(setAsientos)
+      .catch((e) => setError(e instanceof Error ? e.message : 'Error al cargar asientos'))
+      .finally(() => setLoading(false));
+  }, [bus?.id]);
+
+  async function handleToggle(asiento: Asiento) {
+    const nuevoEstado = !asiento.bloqueadoManual;
+    try {
+      const updated = await asientoRepository.update(asiento.id, { bloqueadoManual: nuevoEstado });
+      setAsientos((prev) => prev.map((a) => (a.id === updated.id ? { ...a, bloqueadoManual: updated.bloqueadoManual } : a)));
+    } catch (e) {
+      console.error('Error al actualizar asiento', e);
+    }
+  }
 
   const piso1 = asientos.filter((a) => a.piso === 1);
   const piso2 = asientos.filter((a) => a.piso === 2);
@@ -69,6 +113,13 @@ export default function AsientosViajePage() {
   const totalDisponibles = asientos.filter((a) => getAsientoEstado(a, asientosOcupados) === 'disponible').length;
   const totalOcupados = asientos.filter((a) => getAsientoEstado(a, asientosOcupados) === 'ocupado').length;
   const totalMantenimiento = asientos.filter((a) => getAsientoEstado(a, asientosOcupados) === 'mantenimiento').length;
+
+  if (!viaje || !bus) {
+    return <div className="p-6 text-center text-muted-foreground">Viaje o bus no encontrado</div>;
+  }
+
+  if (loading) return <div className="p-6 text-muted-foreground">Cargando asientos...</div>;
+  if (error) return <div className="p-6 text-red-500">Error: {error}</div>;
 
   return (
     <div className="space-y-6">
@@ -124,12 +175,12 @@ export default function AsientosViajePage() {
               </div>
             </div>
 
-            <div className="flex flex-wrap gap-2 max-w-3xl mx-auto">
+            <div className="flex flex-wrap gap-3 max-w-3xl mx-auto">
               {data.map((asiento, idx) => {
                 const col = idx % 4;
                 const row = Math.floor(idx / 4);
                 return (
-                  <SeatCard key={asiento.id} asiento={asiento} row={row} col={col} asientosOcupados={asientosOcupados} />
+                  <SeatCard key={asiento.id} asiento={asiento} row={row} col={col} asientosOcupados={asientosOcupados} onToggle={handleToggle} />
                 );
               })}
             </div>
@@ -147,8 +198,12 @@ export default function AsientosViajePage() {
             <Crown className="size-4 text-neutral-400" />
             <span className="text-neutral-500">VIP</span>
           </span>
+          <span className="flex items-center gap-1.5">
+            <Lock className="size-4 text-neutral-400" />
+            <span className="text-neutral-500">Hover para bloquear/desbloquear</span>
+          </span>
         </div>
-        <Badge variant="info">preparado para API — data-row/data-col para coordx/coordy</Badge>
+        <Badge variant="info">conectado a API</Badge>
       </div>
     </div>
   );
