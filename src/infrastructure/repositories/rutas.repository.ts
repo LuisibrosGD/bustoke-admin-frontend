@@ -22,7 +22,7 @@ export class RutaRepository {
   }
 
   async findByAgencia(agenciaId: string): Promise<Ruta[]> {
-    return this.list({ idAgencia: agenciaId });
+    return this.list({ id_agencia: agenciaId });
   }
 
   async create(data: Partial<Ruta>): Promise<Ruta> {

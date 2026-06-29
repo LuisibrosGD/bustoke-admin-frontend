@@ -17,10 +17,24 @@ function getHeaderValue(value: unknown): string | undefined {
 export async function GET(request: NextRequest, context: RouteContext) {
   const { slug } = await context.params;
   const searchParams = request.nextUrl.searchParams;
-  const exportParams = new URLSearchParams(searchParams);
+  const exportParams = new URLSearchParams();
 
-  exportParams.delete('page');
-  exportParams.delete('limit');
+  const paramMap: Record<string, string> = {
+    agenciaId: 'id_agencia',
+    rutaId: 'id_ruta',
+    estadoPago: 'estado_pago',
+    metodoPago: 'metodo_pago',
+    canalVenta: 'canal_venta',
+    from: 'fecha_inicio',
+    to: 'fecha_fin',
+  };
+
+  for (const [key, value] of searchParams.entries()) {
+    const mapped = paramMap[key] ?? key;
+    if (mapped !== 'page' && mapped !== 'limit') {
+      exportParams.set(mapped, value);
+    }
+  }
 
   try {
     const response = await serverHttpClient.get<ArrayBuffer>(
