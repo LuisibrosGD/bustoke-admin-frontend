@@ -1,35 +1,60 @@
 'use client';
 
-import { GlobalCombobox } from '@/components/shared';
+import { GlobalCombobox, GlobalComboboxMultiple } from '@/components/shared';
 import { Button, Input } from '@/components/ui';
 import { PATHS } from '@/lib/constants/paths';
 import { SearchIcon, XIcon } from 'lucide-react';
 import Link from 'next/link';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ReportQuery } from '../domain';
 import {
   REPORT_FILTER_KEYS_BY_SLUG,
   REPORT_FILTERS,
   ReportFilterKey,
 } from './report-filter-config';
+import { rutaRepository } from '@/infrastructure/repositories';
+import type { ComboboxOption } from '@/types/common.types';
+
+const MULTI_SELECT_KEYS: ReportFilterKey[] = ['rutaId', 'estadoPago', 'metodoPago', 'canalVenta'];
 
 interface ReportFiltersProps {
   query: ReportQuery;
   slug: string;
+  isSuperAdmin?: boolean;
+  userAgenciaId?: string;
 }
 
-export function ReportFilters({ query, slug }: ReportFiltersProps) {
-  const filterKeys = REPORT_FILTER_KEYS_BY_SLUG[slug] ?? [];
+export function ReportFilters({ query, slug, isSuperAdmin = false, userAgenciaId }: ReportFiltersProps) {
+  const [rutaOptions, setRutaOptions] = useState<ComboboxOption[]>([]);
+
+  useEffect(() => {
+    if (!userAgenciaId) return;
+    rutaRepository.findByAgencia(userAgenciaId)
+      .then((rutas) => {
+        setRutaOptions(
+          rutas.map((r) => {
+            const label = [r.terminalOrigenNombre, r.terminalDestinoNombre].filter(Boolean).join(' → ') || `Ruta ${r.id}`;
+            return { value: r.id, label };
+          })
+        );
+      })
+      .catch(() => setRutaOptions([]));
+  }, [userAgenciaId]);
+
+  const filterKeys = (REPORT_FILTER_KEYS_BY_SLUG[slug] ?? []).filter(
+    (key) => key !== 'agenciaId' || isSuperAdmin
+  );
+
   const [comboboxValues, setComboboxValues] = useState<
-    Partial<Record<ReportFilterKey, string>>
+    Partial<Record<ReportFilterKey, string | string[]>>
   >(() =>
-    filterKeys.reduce<Partial<Record<ReportFilterKey, string>>>((acc, key) => {
-      const filter = REPORT_FILTERS[key];
-
-      if (filter.options) {
-        acc[key] = query[key] ?? '';
+    filterKeys.reduce<Partial<Record<ReportFilterKey, string | string[]>>>((acc, key) => {
+      const raw = query[key];
+      if (MULTI_SELECT_KEYS.includes(key)) {
+        acc[key] = raw ? raw.split(',').filter(Boolean) : [];
+      } else {
+        acc[key] = raw ?? '';
       }
-
       return acc;
     }, {})
   );
@@ -51,36 +76,68 @@ export function ReportFilters({ query, slug }: ReportFiltersProps) {
         </label>
         {filterKeys.map((key) => {
           const filter = REPORT_FILTERS[key];
+          const options = key === 'rutaId' && rutaOptions.length > 0
+            ? rutaOptions
+            : filter.options;
+          const isMulti = MULTI_SELECT_KEYS.includes(key);
+          const currentValue = comboboxValues[key];
+
+          if (isMulti && options) {
+            const arr = Array.isArray(currentValue) ? currentValue : [];
+            return (
+              <div key={key} className="space-y-1.5 text-sm font-medium">
+                <label htmlFor={`report-filter-${key}`} className="block">
+                  {filter.label}
+                </label>
+                <GlobalComboboxMultiple
+                  id={`report-filter-${key}`}
+                  items={options}
+                  value={arr}
+                  onChange={(val) =>
+                    setComboboxValues((current) => ({
+                      ...current,
+                      [key]: val,
+                    }))
+                  }
+                />
+                <input
+                  type="hidden"
+                  name={filter.key}
+                  value={arr.join(',')}
+                />
+              </div>
+            );
+          }
+
           return (
             <div key={key} className="space-y-1.5 text-sm font-medium">
               <label htmlFor={`report-filter-${key}`} className="block">
                 {filter.label}
               </label>
-              {filter.options ? (
+              {options ? (
                 <>
                   <GlobalCombobox
                     id={`report-filter-${key}`}
-                    items={filter.options}
-                    value={comboboxValues[key] ?? ''}
+                    items={options}
+                    value={typeof currentValue === 'string' ? currentValue : ''}
                     onChange={(value) =>
                       setComboboxValues((current) => ({
                         ...current,
                         [key]: value,
                       }))
                     }
-                    placeholder={filter.placeholder}
-                  />
+                />
                   <input
                     type="hidden"
                     name={filter.key}
-                    value={comboboxValues[key] ?? ''}
+                    value={typeof currentValue === 'string' ? currentValue : ''}
                   />
                 </>
               ) : (
                 <Input
                   id={`report-filter-${key}`}
                   name={filter.key}
-                  defaultValue={query[filter.key]}
+                  defaultValue={typeof currentValue === 'string' ? currentValue : query[filter.key]}
                   placeholder={filter.placeholder}
                 />
               )}

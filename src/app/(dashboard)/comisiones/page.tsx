@@ -1,10 +1,10 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { Badge, Button, Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui';
 import { DollarSign, Clock, TrendingUp, CheckCircle } from 'lucide-react';
-import { liquidacionRepository } from '@/infrastructure/repositories';
-import type { Liquidacion } from '@/infrastructure/domain/types';
+import { agenciaRepository, liquidacionRepository } from '@/infrastructure/repositories';
+import type { Agencia, Liquidacion } from '@/infrastructure/domain/types';
 import { useUserRole } from '@/hooks';
 
 const ESTADO_VARIANT: Record<string, 'warning' | 'success' | 'danger' | 'neutral'> = {
@@ -20,13 +20,22 @@ export default function ComisionesPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [updating, setUpdating] = useState<string | null>(null);
+  const [agencias, setAgencias] = useState<Agencia[]>([]);
 
   useEffect(() => {
-    liquidacionRepository.list()
-      .then(setData)
+    Promise.all([
+      liquidacionRepository.list(),
+      agenciaRepository.list(),
+    ])
+      .then(([liquidaciones, ags]) => {
+        setData(liquidaciones);
+        setAgencias(ags);
+      })
       .catch((e) => setError(e instanceof Error ? e.message : 'Error al cargar'))
       .finally(() => setLoading(false));
   }, []);
+
+  const agenciasMap = useMemo(() => new Map(agencias.map((a) => [a.id, a])), [agencias]);
 
   async function marcarTransferido(id: string) {
     setUpdating(id);
@@ -116,7 +125,7 @@ export default function ComisionesPage() {
           <TableBody>
             {data.map((l) => (
               <TableRow key={l.id}>
-                <TableCell className="font-medium text-neutral-900">{l.idAgencia}</TableCell>
+                <TableCell className="font-medium text-neutral-900">{agenciasMap.get(String(l.idAgencia))?.razonSocial ?? l.idAgencia}</TableCell>
                 <TableCell>{l.periodo}</TableCell>
                 <TableCell>S/ {Number(l.montoVentas).toLocaleString()}</TableCell>
                 <TableCell>S/ {Number(l.comisionPlataforma).toLocaleString()}</TableCell>

@@ -67,7 +67,7 @@ export default function PasajerosViajePage() {
         <div className="px-6 py-4 border-b border-neutral-100">
           <h2 className="text-base font-semibold text-neutral-900">Lista de Pasajeros</h2>
         </div>
-        <PasajerosTable />
+        <PasajerosTable viajeId={params.id} />
       </div>
     </div>
   );

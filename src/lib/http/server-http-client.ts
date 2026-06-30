@@ -14,7 +14,7 @@ export interface ServerRequestConfig extends InternalAxiosRequestConfig {
 }
 
 const serverHttpClient = axios.create({
-  baseURL: ENV_URL_API + '/api',
+  baseURL: ENV_URL_API,
 });
 
 type DynamicServerErrorLike = {

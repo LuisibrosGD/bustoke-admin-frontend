@@ -37,7 +37,7 @@ export class AgenciaRepository {
 
   async patch(id: string, data: Partial<Agencia>): Promise<Agencia> {
     return request<Agencia>(`/admin/agencias/${id}`, {
-      method: 'PATCH',
+      method: 'PUT',
       body: JSON.stringify(data),
     });
   }

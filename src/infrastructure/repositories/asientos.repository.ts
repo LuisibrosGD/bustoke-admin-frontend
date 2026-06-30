@@ -24,9 +24,9 @@ export class AsientoRepository {
   }
 
   async create(busId: string, data: Partial<Asiento>): Promise<Asiento> {
-    return request<Asiento>(`/admin/flota/buses/${busId}/asientos`, {
+    return request<Asiento>('/admin/flota/asientos', {
       method: 'POST',
-      body: JSON.stringify(data),
+      body: JSON.stringify({ ...data, idBus: busId }),
     });
   }
 

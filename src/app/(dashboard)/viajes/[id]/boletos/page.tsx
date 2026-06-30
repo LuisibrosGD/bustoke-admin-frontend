@@ -86,7 +86,7 @@ export default function BoletosViajePage() {
         accessorKey: 'precioFinal',
         header: 'Monto',
         cell: ({ row }) => {
-          const monto = row.getValue<number>('precioFinal');
+          const monto = Number(row.getValue('precioFinal'));
           return `S/ ${monto.toFixed(2)}`;
         },
       },

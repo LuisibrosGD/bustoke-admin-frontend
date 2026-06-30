@@ -47,8 +47,9 @@ async function getErrorMessage(response: Response) {
 
 function getBackendExportUrl(exportHref: string) {
   const url = new URL(exportHref, window.location.origin);
+  const backendPath = url.pathname.replace(/^\/api/, '') + '/excel';
 
-  return `${ENV_URL_API}${url.pathname}${url.search}`;
+  return `${ENV_URL_API}${backendPath}${url.search}`;
 }
 
 export function ReportExportButton({

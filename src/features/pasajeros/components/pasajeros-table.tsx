@@ -10,7 +10,7 @@ import type { Pasajero } from '@/infrastructure/domain/types';
 import { pasajerosColumns } from './pasajeros-columns';
 import { DataTableEmpty } from '@/components/ui/data-table/data-table-empty';
 
-export function PasajerosTable() {
+export function PasajerosTable({ viajeId }: { viajeId?: string }) {
   const { role, idAgencia } = useUserRole();
   const [data, setData] = useState<Pasajero[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -23,8 +23,13 @@ export function PasajerosTable() {
       setIsLoading(true);
       setError(null);
       try {
-        const params = role === 'admin_agencia' && idAgencia ? { id_agencia: idAgencia } : undefined;
-        const result = await pasajeroRepository.list(params);
+        let result: Pasajero[];
+        if (viajeId) {
+          result = await pasajeroRepository.getByViaje(viajeId);
+        } else {
+          const params = role === 'admin_agencia' && idAgencia ? { id_agencia: idAgencia } : undefined;
+          result = await pasajeroRepository.list(params);
+        }
         if (!cancelled) setData(result);
       } catch (err) {
         if (!cancelled) setError(err instanceof Error ? err.message : 'Error al cargar pasajeros');
@@ -34,7 +39,7 @@ export function PasajerosTable() {
     }
     load();
     return () => { cancelled = true; };
-  }, [role, idAgencia]);
+  }, [role, idAgencia, viajeId]);
 
   const f = useMemo(() => {
     if (!s) return data;

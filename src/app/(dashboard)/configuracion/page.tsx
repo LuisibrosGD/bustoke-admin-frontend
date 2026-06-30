@@ -26,6 +26,7 @@ import type { Agencia, ApiKey } from '@/infrastructure/domain/types';
 export default function ConfiguracionPage() {
   const [apiKeys, setApiKeys] = useState<ApiKey[]>([]);
   const [agencias, setAgencias] = useState<Agencia[]>([]);
+  const [creating, setCreating] = useState(false);
 
   useEffect(() => {
     apiKeyRepository.list().then(setApiKeys).catch(() => setApiKeys([]));
@@ -33,6 +34,26 @@ export default function ConfiguracionPage() {
   }, []);
 
   const agenciasMap = useMemo(() => new Map(agencias.map((a) => [a.id, a])), [agencias]);
+
+  async function handleCreateApiKey() {
+    const idAgencia = agencias[0]?.id;
+    if (!idAgencia) return;
+    setCreating(true);
+    try {
+      const exp = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString();
+      await apiKeyRepository.create({ idAgencia: Number(idAgencia), token: '', fechaExpiracion: exp });
+      const keys = await apiKeyRepository.list();
+      setApiKeys(keys);
+    } catch {}
+    setCreating(false);
+  }
+
+  async function handleDeleteApiKey(id: string) {
+    try {
+      await apiKeyRepository.delete(id);
+      setApiKeys((prev) => prev.filter((k) => k.id !== id));
+    } catch {}
+  }
 
   return (
     <div className="space-y-6">
@@ -135,9 +156,9 @@ export default function ConfiguracionPage() {
                 <h2 className="text-lg font-semibold text-neutral-900">API Keys</h2>
                 <p className="text-sm text-muted-foreground mt-0.5">Claves para integraciones externas.</p>
               </div>
-              <Button disabled>
+              <Button onClick={handleCreateApiKey} disabled={creating}>
                 <Key className="size-4" />
-                Crear API Key
+                {creating ? 'Creando...' : 'Crear API Key'}
               </Button>
             </div>
             <Separator />
@@ -168,10 +189,10 @@ export default function ConfiguracionPage() {
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex items-center justify-end gap-1">
-                        <Button variant="ghost" size="icon-sm" disabled>
+                        <Button variant="ghost" size="icon-sm" onClick={() => navigator.clipboard.writeText(k.token)}>
                           <Copy className="size-4" />
                         </Button>
-                        <Button variant="ghost" size="icon-sm" disabled>
+                        <Button variant="ghost" size="icon-sm" onClick={() => handleDeleteApiKey(k.id)}>
                           <Trash2 className="size-4 text-red-500" />
                         </Button>
                       </div>

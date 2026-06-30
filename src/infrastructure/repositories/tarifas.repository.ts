@@ -17,21 +17,21 @@ export class TarifaRepository {
   }
 
   async create(data: { idRuta: number; tipoServicio: string; precio: number }): Promise<TarifaRuta> {
-    return request<TarifaRuta>('/admin/tarifas', {
+    return request<TarifaRuta>('/admin/rutas/tarifas', {
       method: 'POST',
       body: JSON.stringify(data),
     });
   }
 
   async update(id: string, data: { tipoServicio?: string; precio?: number }): Promise<TarifaRuta> {
-    return request<TarifaRuta>(`/admin/tarifas/${id}`, {
+    return request<TarifaRuta>(`/admin/rutas/tarifas/${id}`, {
       method: 'PUT',
       body: JSON.stringify(data),
     });
   }
 
   async delete(id: string): Promise<void> {
-    await fetch(`${API}/admin/tarifas/${id}`, { method: 'DELETE' });
+    await fetch(`${API}/admin/rutas/tarifas/${id}`, { method: 'DELETE' });
   }
 }
 

@@ -75,8 +75,8 @@ export const REPORT_FILTERS: Record<ReportFilterKey, ReportFilterDefinition> = {
     label: 'Canal de venta',
     placeholder: 'Selecciona un canal',
     options: [
-      { value: 'appbustoke', label: 'App Bustoke' },
-      { value: 'ventanillafisica', label: 'Ventanilla física' },
+      { value: 'app_bustoke', label: 'App Bustoke' },
+      { value: 'ventanilla_fisica', label: 'Ventanilla física' },
     ],
   },
 };

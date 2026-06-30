@@ -190,6 +190,7 @@ export type Boleto = {
   precioFinal: number;
   fechaEmision: string;
   estado: EstadoBoleto;
+  estadoCheckin: string;
 };
 
 // --- Pagos ---
